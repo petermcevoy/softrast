@@ -30,6 +30,7 @@ static ScreenBuffer buffer;
 static int running = 1;
 static TGAImage *texture;
 static Matrix projection = Matrix::identity(4);
+static float cameraZ = 3.f;
 
 void set_color(ScreenBuffer *buffer, int x, int y, uint32_t color) {
     uint32_t *pixels = (uint32_t *)buffer->memory;
@@ -97,6 +98,18 @@ Matrix v2m(Vec3f v) {
     m[3][0] = 1.f;
     return m;
 }
+const int depth  = 255;
+Matrix viewport(int x, int y, int w, int h) {
+    Matrix m = Matrix::identity(4);
+    m[0][3] = x+w/2.f;
+    m[1][3] = y+h/2.f;
+    m[2][3] = depth/2.f;
+    
+    m[0][0] = w/2.f;
+    m[1][1] = h/2.f;
+    m[2][2] = depth/2.f;
+    return m;
+}
 
 void triangle(ScreenBuffer *buffer, Vec3f v0, Vec3f v1, Vec3f v2,
         Vec3f v0uv, Vec3f v1uv, Vec3f v2uv, uint32_t color) {
@@ -111,70 +124,65 @@ void triangle(ScreenBuffer *buffer, Vec3f v0, Vec3f v1, Vec3f v2,
     Vec2i sc[3]; //screen coords
     Vec3f wc[3] = {v0, v1, v2}; //world coords
     
+    Matrix ViewPort = viewport(SCREEN_WIDTH/8, SCREEN_HEIGHT/8, SCREEN_WIDTH*3/4, SCREEN_HEIGHT*3/4);
     //set screen_cords
     for(int j=0; j < 3; j++) {
-        Vec3f vtmp = m2v(projection*v2m(wc[j]));
+        Vec3f vtmp = m2v(ViewPort*projection*v2m(wc[j]));
+        sc[j] = Vec2i(vtmp.x, vtmp.y);
+        //Vec3f vtmp = wc[j];
         //sc[j] = Vec2i(
         //        (vtmp.x+1.f)*SCREEN_WIDTH/2.f,
         //        (vtmp.y+1.f)*SCREEN_HEIGHT/2.f);
-        sc[j] = Vec2i((wc[j].x+1.f)*SCREEN_WIDTH/2.f,
-                (wc[j].y+1.f)*SCREEN_HEIGHT/2.f);
     }
     
     //triangle normal
     Vec3f n = cross((wc[2]-wc[0]),(wc[1]-wc[0]));
-    n.normalize(); 
+    n.normalize();
 
-    float line_a_coef = (sc[0].y-sc[1].y) ? (float)(sc[0].x - sc[1].x)/((float)(sc[0].y - sc[1].y)) : 0.f;
-    float line_b_coef = (float)(sc[1].x - sc[2].x)/((float)(sc[1].y - sc[2].y));
-    float line_c_coef = (float)(sc[2].x - sc[0].x)/((float)(sc[2].y - sc[0].y)); //longest
+    //Find bounding box to loop over.
+    int ymin = sc[0].y;
+    if (ymin > sc[1].y) ymin = sc[1].y;
+    if (ymin > sc[2].y) ymin = sc[2].y;
+
+    int ymax = sc[2].y;
+    if (sc[0].y > ymax) ymax = sc[0].y;
+    if (sc[1].y > ymax) ymax = sc[1].y;
     
-    int sec1_size = std::abs(sc[0].y - sc[1].y);
-    int sec2_size = std::abs(sc[1].y - sc[2].y);
+    int xmin = sc[0].x; 
+    if (xmin > sc[1].x) xmin = sc[1].x;
+    if (xmin > sc[2].x) xmin = sc[2].x;
+    
+    int xmax = sc[2].x;
+    if (sc[0].x > xmax) xmax = sc[0].x;
+    if (sc[1].x > xmax) xmax = sc[1].x;
 
-    int offset_y = sc[0].y;
-    int offset_x = sc[0].x;
-    Vec2i start_p, end_p;
-    //Loop height of triangle
-    for (int tmp_y = 0; tmp_y < (sec1_size + sec2_size); tmp_y++) {
-        start_p.y = offset_y+tmp_y;
-        end_p.y = offset_y+tmp_y;
+    float area = det(sc[0], sc[1], sc[2]); //2x tri area
 
-        //set end depending on which section we are on
-        start_p.x = sc[0].x + (int)(tmp_y*line_c_coef);
-        if (tmp_y <= sec1_size) {
-            end_p.x = sc[1].x + (int)((tmp_y-sec1_size)*line_a_coef);
-        } else {
-            end_p.x = sc[2].x + (int)((tmp_y-sec1_size-sec2_size)*line_b_coef);
-        }
+    //Bounding box test
+    for (int x=xmin; x<=xmax; x++) {
+        for (int y=ymin; y<=ymax; y++) {
+            Vec2i p = Vec2i(x, y);
+            //barycentric (bc_clip?)
+            float w0 = det(sc[1],sc[2],p); //signed 2x area
+            float w1 = det(sc[2],sc[0],p); //signed 2x area
+            float w2 = det(sc[0],sc[1],p); //signed 2x area
+            w0 /= area; w1 /= area; w2 /= area;
 
-        if (start_p.x > end_p.x) std::swap(start_p, end_p);
-        float yf = (float)start_p.y*2.f/((float)SCREEN_HEIGHT) - 1.f;
-        float d = -n.x*v0.x - n.y*v0.y - n.z*v0.z;
-        for (int x=start_p.x; x <= end_p.x; x++) {
-            float xf = (float)x*2.f/((float)SCREEN_WIDTH) - 1.f;
-            float z = -1.f*(n.x*xf + n.y*yf + d)/n.z;
-            int zval = (int)(255.f*(z + 1.f)/2.f);
-            int ret = set_z(buffer, x, start_p.y, zval);
-            if (ret){
-                //get texture color
-
-                Vec2i p = Vec2i(x, start_p.y);
-
-                //barycentric //TODO Move up
-                float area = det(sc[0], sc[1], sc[2]); //2x tri area
-                float w0 = det(sc[1],sc[2],p); //signed 2x area
-                float w1 = det(sc[2],sc[0],p); //signed 2x area
-                float w2 = det(sc[0],sc[1],p); //signed 2x area
-                w0 /= area; w1 /= area; w2 /= area;
+            if (w0 >= 0 && w1 >= 0 && w2 >= 0) { //TODO, verify check within tri.
+                //get z value
+                float z = v0.z * w0 + v1.z * w1 + v2.z * w2;
+                //int zval = z*0xff;
+                int zval = (int)(255.f*(z + 1.f)/2.f);
                 
-                
+                //get texture color Test
+                //Vec3f v0col = Vec3f(1.f,0,0);
+                //Vec3f v1col = Vec3f(0,1.f,0);
+                //Vec3f v2col = Vec3f(0,0,1.f);
                 //Vec3f rgb = v0col * w0 + v1col * w1 + v2col * w2;
                 //color = ((int)(rgb.x*0xff) << 16) + 
                 //    ((int)(rgb.y*0xff) << 8) + 
                 //    ((int)(rgb.z*0xff));
-                    
-
+                
                 Vec3f uv = v0uv * w0 + v1uv * w1 + v2uv * w2;
                 int tex_x = (int)(uv.x*(float)texture->get_width());
                 int tex_y = (int)((1.f-uv.y)*(float)texture->get_height());
@@ -182,9 +190,11 @@ void triangle(ScreenBuffer *buffer, Vec3f v0, Vec3f v1, Vec3f v2,
                 color = (tex_color.bgra[0]) + 
                     (tex_color.bgra[1] << 8) + 
                     (tex_color.bgra[2] << 16);
-
-                set_color(buffer, x, start_p.y, color);
-            } 
+                
+                if(set_z(buffer, x, y, zval)) {
+                    set_color(buffer, x, y, color);
+                }
+            }
         }
     }
 
@@ -406,8 +416,7 @@ void flat_shading(ScreenBuffer *buffer, Model obj) {
 void render(ScreenBuffer *buffer) {
     //clear to black
     memset(buffer->memory, 0, buffer->height*buffer->width*(sizeof(uint32_t)));
-    memset(buffer->zbuffer, 0,
-            buffer->height*buffer->width*(sizeof(int)));
+    memset(buffer->zbuffer, 0, buffer->height*buffer->width*(sizeof(int)));
     
     uint32_t *pixels = (uint32_t *)buffer->memory;
 
@@ -422,12 +431,12 @@ void render(ScreenBuffer *buffer) {
     Vec2i t1[3] = {Vec2i(180, 50),  Vec2i(150, 1),   Vec2i(70, 180)}; 
     Vec2i t2[3] = {Vec2i(180, 150), Vec2i(120, 160), Vec2i(130, 180)}; 
     
-    /*Vec3f t3[3] = {
-        Vec3f(-0.8f, 0.0f, 0.1f),
-        Vec3f(0.8f, 0.0f, 0.1f),
-        Vec3f(0.0f, 0.9f, 0.1f)
+    Vec3f t3[3] = {
+        Vec3f(-0.8f, 0.0f, 0.9f),
+        Vec3f(0.8f, -0.02f, 0.9f),
+        Vec3f(0.0f, 0.001f, 0.9f)
     }; 
-    triangle(buffer, t3[0], t3[1], t3[2], t3[0], t3[1], t3[2], 0xffffffff);*/
+    //triangle(buffer, t3[0], t3[1], t3[2], t3[0], t3[1], t3[2], 0xffffffff);
     
     //triangle(buffer, t0[0], t0[1], t0[2], red);
     //triangle(buffer, t1[0], t1[1], t1[2], green);
@@ -444,7 +453,7 @@ void render(ScreenBuffer *buffer) {
     //Adjust vertex positions.
     //Matrix projection = Matrix::identity(4);
     //Matrix viewport = Matrix::identity(4);
-    projection[3][2] = -1.f/15.f;
+    projection[3][2] = -1.f/cameraZ;
     
     //Load texture
     texture = new TGAImage();
