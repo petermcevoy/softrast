@@ -29,6 +29,8 @@ typedef struct {
 static ScreenBuffer buffer;
 static int running = 1;
 static TGAImage *texture;
+static Model obj;
+
 static Matrix projection = Matrix::identity(4);
 static float cameraZ = 3.f;
 
@@ -103,13 +105,43 @@ Matrix viewport(int x, int y, int w, int h) {
     Matrix m = Matrix::identity(4);
     m[0][3] = x+w/2.f;
     m[1][3] = y+h/2.f;
-    m[2][3] = depth/2.f;
+    m[2][3] = 1.f;
     
     m[0][0] = w/2.f;
     m[1][1] = h/2.f;
     m[2][2] = depth/2.f;
     return m;
 }
+
+Matrix ModelView;
+void lookat(Vec3f eye, Vec3f center, Vec3f up) {
+    //camera always points along z
+    Vec3f z = (eye-center).normalize();
+    Vec3f x = cross(up, z).normalize();
+    Vec3f y = cross(z, x).normalize();
+
+    //make transformation matrix
+    Matrix Minv = Matrix::identity(4);
+    Matrix Tr   = Matrix::identity(4);
+    Minv[0][0] = x.x;
+    Minv[0][1] = x.y;
+    Minv[0][2] = x.z;
+    
+    Minv[1][0] = y.x;
+    Minv[1][1] = y.y;
+    Minv[1][2] = y.z;
+    
+    Minv[2][0] = z.x;
+    Minv[2][1] = z.y;
+    Minv[2][2] = z.z;
+
+    Tr[0][3] = -center.x;
+    Tr[1][3] = -center.y;
+    Tr[2][3] = -center.z;
+
+    ModelView = Minv*Tr;
+}
+
 
 void triangle(ScreenBuffer *buffer, Vec3f v0, Vec3f v1, Vec3f v2,
         Vec3f v0uv, Vec3f v1uv, Vec3f v2uv, uint32_t color) {
@@ -127,7 +159,7 @@ void triangle(ScreenBuffer *buffer, Vec3f v0, Vec3f v1, Vec3f v2,
     Matrix ViewPort = viewport(SCREEN_WIDTH/8, SCREEN_HEIGHT/8, SCREEN_WIDTH*3/4, SCREEN_HEIGHT*3/4);
     //set screen_cords
     for(int j=0; j < 3; j++) {
-        Vec3f vtmp = m2v(ViewPort*projection*v2m(wc[j]));
+        Vec3f vtmp = m2v(ViewPort*projection*ModelView*v2m(wc[j]));
         sc[j] = Vec2i(vtmp.x, vtmp.y);
         //Vec3f vtmp = wc[j];
         //sc[j] = Vec2i(
@@ -413,7 +445,7 @@ void flat_shading(ScreenBuffer *buffer, Model obj) {
     }
 }*/
 
-void render(ScreenBuffer *buffer) {
+void render(ScreenBuffer *buffer, int count) {
     //clear to black
     memset(buffer->memory, 0, buffer->height*buffer->width*(sizeof(uint32_t)));
     memset(buffer->zbuffer, 0, buffer->height*buffer->width*(sizeof(int)));
@@ -443,21 +475,32 @@ void render(ScreenBuffer *buffer) {
     //triangle(buffer, t2[0], t2[1], t2[2], blue);
 
     //Load file
-    Model obj;
-    obj.faces_verts = new std::vector<int>;
-    obj.faces_uvs = new std::vector<int>;
-    obj.verts = new std::vector<float>;
-    obj.uvs = new std::vector<float>;
-    load_obj("res/head.obj", obj);
+    //Model obj;
+    //obj.faces_verts = new std::vector<int>;
+    //obj.faces_uvs = new std::vector<int>;
+    //obj.verts = new std::vector<float>;
+    //obj.uvs = new std::vector<float>;
+    //load_obj("res/head.obj", obj);
 
     //Adjust vertex positions.
     //Matrix projection = Matrix::identity(4);
     //Matrix viewport = Matrix::identity(4);
-    projection[3][2] = -1.f/cameraZ;
+    //projection[3][2] = -1.f/cameraZ;
+
+    float factor = std::abs(sin(count/15.f)*0.5+0.5);
+    float offset = factor*10.f;
+
+    //projection[3][2] = -1.f/cameraZ;
+    Vec3f eye = Vec3f(0.f,0.f,2.f + offset);
+    Vec3f c = Vec3f(0.f,0.f,0.f + offset);
+    //projection[3][2] = -1.f/(c.z-eye.z);
+    projection[3][2] = -1.f/(eye.z - c.z);
+    Vec3f up = Vec3f(0.f,1.f,0.f);
+    lookat(eye, c, up);
     
     //Load texture
-    texture = new TGAImage();
-    texture->read_tga_file("res/head_diffuse.tga");
+    //texture = new TGAImage();
+    //texture->read_tga_file("res/head_diffuse.tga");
     
     //rasterize_obj(buffer, zbuffer, verts, faces);
     flat_shading(buffer, obj);
@@ -516,8 +559,25 @@ int main() {
 
     void* pixel_mem = malloc(SCREEN_WIDTH*SCREEN_HEIGHT*4);
     
+    //Load file
+    //Model obj;
+    obj.faces_verts = new std::vector<int>;
+    obj.faces_uvs = new std::vector<int>;
+    obj.verts = new std::vector<float>;
+    obj.uvs = new std::vector<float>;
+    load_obj("res/head.obj", obj);
+
+    //Load texture
+    texture = new TGAImage();
+    texture->read_tga_file("res/head_diffuse.tga");
+    
+    
+    int count = 0;
+    //Main display
+    while(running) {
+
         //Render video
-        render(&buffer);
+        render(&buffer, count++);
 
         uint32_t *pixels = (uint32_t *) pixel_mem;
         if (1) {
@@ -557,8 +617,6 @@ int main() {
         SDL_RenderCopy(Renderer, Tex, 0, 0);
         SDL_RenderPresent(Renderer);
 
-    //Main display
-    while(running) {
         
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -572,7 +630,7 @@ int main() {
         }
 
 
-        SDL_Delay(100);
+        //SDL_Delay(100);
     }
     
     free(buffer.memory);
