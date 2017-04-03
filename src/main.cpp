@@ -148,9 +148,9 @@ void triangle(ScreenBuffer *buffer, Vec3f v0, Vec3f v1, Vec3f v2,
     //TODO change to use the boundingbox/barycentric method
     
     //order points
-    if (v0.y > v1.y) {std::swap(v0, v1); std::swap(v0uv, v1uv); }
-    if (v0.y > v2.y) {std::swap(v0, v2); std::swap(v0uv, v2uv); }
-    if (v1.y > v2.y) {std::swap(v1, v2); std::swap(v1uv, v2uv); }
+    //if (v0.y > v1.y) {std::swap(v0, v1); std::swap(v0uv, v1uv); }
+    //if (v0.y > v2.y) {std::swap(v0, v2); std::swap(v0uv, v2uv); }
+    //if (v1.y > v2.y) {std::swap(v1, v2); std::swap(v1uv, v2uv); }
 
 
     Vec2i sc[3]; //screen coords
@@ -159,12 +159,12 @@ void triangle(ScreenBuffer *buffer, Vec3f v0, Vec3f v1, Vec3f v2,
     Matrix ViewPort = viewport(SCREEN_WIDTH/8, SCREEN_HEIGHT/8, SCREEN_WIDTH*3/4, SCREEN_HEIGHT*3/4);
     //set screen_cords
     for(int j=0; j < 3; j++) {
-        Vec3f vtmp = m2v(ViewPort*projection*ModelView*v2m(wc[j]));
-        sc[j] = Vec2i(vtmp.x, vtmp.y);
-        //Vec3f vtmp = wc[j];
-        //sc[j] = Vec2i(
-        //        (vtmp.x+1.f)*SCREEN_WIDTH/2.f,
-        //        (vtmp.y+1.f)*SCREEN_HEIGHT/2.f);
+        Matrix mtmp = projection*ModelView*v2m(wc[j]);
+        Vec3f wctmp = m2v(mtmp);
+        wc[j] = wctmp;
+
+        Vec3f sctmp = m2v(ViewPort*mtmp);
+        sc[j] = Vec2i(sctmp.x, sctmp.y);
     }
     
     //triangle normal
@@ -202,7 +202,7 @@ void triangle(ScreenBuffer *buffer, Vec3f v0, Vec3f v1, Vec3f v2,
 
             if (w0 >= 0 && w1 >= 0 && w2 >= 0) { //TODO, verify check within tri.
                 //get z value
-                float z = v0.z * w0 + v1.z * w1 + v2.z * w2;
+                float z = wc[0].z * w0 + wc[1].z * w1 + wc[2].z * w2;
                 //int zval = z*0xff;
                 int zval = (int)(255.f*(z + 1.f)/2.f);
                 
@@ -257,9 +257,6 @@ void load_obj(const char * filename, Model obj) {
     }
     fseek(fp , -1*line_len-1 , SEEK_CUR);
     
-    verts->push_back(0.f);
-    verts->push_back(0.f);
-    verts->push_back(0.f);
 
     while(1) {
         fgets(str, 100, fp);
@@ -285,10 +282,6 @@ void load_obj(const char * filename, Model obj) {
     }
     fseek(fp , -1*line_len-1 , SEEK_CUR);
     
-    
-    uvs->push_back(0.f);
-    uvs->push_back(0.f);
-    uvs->push_back(0.f);
     
     while(1) {
         fgets(str, 100, fp);
@@ -325,21 +318,24 @@ void load_obj(const char * filename, Model obj) {
             printf("EOF");
             break;
         }
-
-        //set faces
-        int vert_indecies[3];
-        int uv_indecies[3];
-        sscanf(str, "f %d/%d/%*d %d/%d/%*d %d/%d/%*d", 
-                &vert_indecies[0], &uv_indecies[0],
-                &vert_indecies[1], &uv_indecies[1],
-                &vert_indecies[2], &uv_indecies[2]);
-        for(int i=0; i < 3; i++) {
-            faces_verts->push_back(vert_indecies[i]);
-            faces_uvs->push_back(uv_indecies[i]);
+        if (str[0] == 'f' && str[1] == ' ') {
+            //set faces
+            int vert_indecies[3];
+            int uv_indecies[3];
+            sscanf(str, "f %d/%d/%*d %d/%d/%*d %d/%d/%*d", 
+                    &vert_indecies[0], &uv_indecies[0],
+                    &vert_indecies[1], &uv_indecies[1],
+                    &vert_indecies[2], &uv_indecies[2]);
+            for(int i=0; i < 3; i++) {
+                faces_verts->push_back(vert_indecies[i] - 1);
+                faces_uvs->push_back(uv_indecies[i] - 1);
+            }
         }
 
     }
     
+    printf("\n\n# of verts %lu, # of vertids: %lu. \n\n\n", verts->size(), faces_verts->size());
+
     fclose(fp);
 }
 
@@ -390,7 +386,7 @@ void flat_shading(ScreenBuffer *buffer, Model obj) {
         vert_indecies[0] = faces[i];
         vert_indecies[1] = faces[i+1];
         vert_indecies[2] = faces[i+2];
-        Vec2i screen_coords[3];
+        //Vec2i screen_coords[3];
 
         Vec3f world_coords[3];
         
@@ -408,8 +404,8 @@ void flat_shading(ScreenBuffer *buffer, Model obj) {
             v.z = verts[ 3*vert_indecies[j] + 2];
             world_coords[j] = v;
 
-            screen_coords[j] = Vec2i((v.x+1.f)*SCREEN_WIDTH/2.f,
-                (v.y+1.f)*SCREEN_HEIGHT/2.f);
+            //screen_coords[j] = Vec2i((v.x+1.f)*SCREEN_WIDTH/2.f,
+            //    (v.y+1.f)*SCREEN_HEIGHT/2.f);
         }
 
         //determine triangle color
@@ -418,14 +414,14 @@ void flat_shading(ScreenBuffer *buffer, Model obj) {
 
         Vec3f light_dir = Vec3f(0.f,0.f, -1.f);
         float intensity = dot(n, light_dir);
-        if (intensity > 0) {
-            uint32_t color = (uint8_t)(0xff*intensity) + 
-                ((uint8_t)(0xff*intensity) << 8) +
-                ((uint8_t)(0xff*intensity) << 16) +
-                ((uint8_t)(0xff*intensity) << 24);
+        //if (intensity > 0) {
+            //uint32_t color = (uint8_t)(0xff*intensity) + 
+            //    ((uint8_t)(0xff*intensity) << 8) +
+            //    ((uint8_t)(0xff*intensity) << 16) +
+            //    ((uint8_t)(0xff*intensity) << 24);
             triangle(buffer, world_coords[0], world_coords[1], world_coords[2],
-                    uv_coords[0], uv_coords[1], uv_coords[2], color);
-        }
+                    uv_coords[0], uv_coords[1], uv_coords[2], 0);
+        //}
     }
     
 }
@@ -487,12 +483,16 @@ void render(ScreenBuffer *buffer, int count) {
     //Matrix viewport = Matrix::identity(4);
     //projection[3][2] = -1.f/cameraZ;
 
-    float factor = std::abs(sin(count/15.f)*0.5+0.5);
-    float offset = factor*10.f;
+    float factor = std::abs(sin(count/15.f)*0.5);
+    float factor2 = sin(count/5.f);
+    float offset = 0;//factor*10.f;
+    float offset2 = factor2*5.f;
+
+    float t = count/20.f;
 
     //projection[3][2] = -1.f/cameraZ;
-    Vec3f eye = Vec3f(0.f,0.f,2.f + offset);
-    Vec3f c = Vec3f(0.f,0.f,0.f + offset);
+    Vec3f eye = Vec3f(10.f*sin(t),0.f, 3.f);//3.f*cos(t));
+    Vec3f c = Vec3f(0.f,0.f,0.f);
     //projection[3][2] = -1.f/(c.z-eye.z);
     projection[3][2] = -1.f/(eye.z - c.z);
     Vec3f up = Vec3f(0.f,1.f,0.f);
