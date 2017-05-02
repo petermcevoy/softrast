@@ -66,11 +66,11 @@ template <typename T> Vec3<T> operator*(Vec3<T> lhs, float factor) {
 typedef Vec2<int> Vec2i;
 typedef Vec3<float> Vec3f;
 
-float det(Vec3f a, Vec3f b, Vec3f c) {
+static float det(Vec3f a, Vec3f b, Vec3f c) {
     return a.x*(b.y-c.y) - a.y*(b.x - c.x) + (b.x*c.y - b.y*c.x);
 }
 
-float det(Vec2i a, Vec2i b, Vec2i c) {
+static float det(Vec2i a, Vec2i b, Vec2i c) {
     return a.x*(b.y-c.y) - a.y*(b.x - c.x) + (b.x*c.y - b.y*c.x);
 }
 
