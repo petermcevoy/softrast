@@ -10,7 +10,7 @@ void set_color(ScreenBuffer *buffer, int x, int y, uint32_t color) {
 }
 
 int set_z(ScreenBuffer *buffer, int x, int y, int z) {
-    int *zbuffer = (int *)buffer->zbuffer;
+    int *zbuffer = (int *)buffer->memory;
     int ny = (buffer->height-1) - y;
     if (!(0 >= x && x < buffer->width) || !(0 >= y && y < buffer->height)) {
         //assert(false);
@@ -56,23 +56,20 @@ void line(ScreenBuffer *buffer, Vec2i p0, Vec2i p1, uint32_t color) {
     } 
 }
 
-void triangle(ScreenBuffer *buffer, Vec3f v0, Vec3f v1, Vec3f v2,
+// Main rasterize function
+void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
         Vec3f v0uv, Vec3f v1uv, Vec3f v2uv, uint32_t color) {
     //TODO change to use the boundingbox/barycentric method
+    ScreenBuffer *buffer_rgba = &ctx->buffers[0];
+    ScreenBuffer *buffer_z = &ctx->buffers[1];
     
-    //order points
-    //if (v0.y > v1.y) {std::swap(v0, v1); std::swap(v0uv, v1uv); }
-    //if (v0.y > v2.y) {std::swap(v0, v2); std::swap(v0uv, v2uv); }
-    //if (v1.y > v2.y) {std::swap(v1, v2); std::swap(v1uv, v2uv); }
-
-
     Vec2i sc[3]; //screen coords
     Vec3f wc[3] = {v0, v1, v2}; //world coords
     
-    Matrix ViewPort = viewport(buffer->width/8, buffer->height/8, buffer->width*3/4, buffer->height*3/4);
+    Matrix ViewPort = viewport(buffer_rgba->width/8, buffer_rgba->height/8, buffer_rgba->width*3/4, buffer_rgba->height*3/4);
     //set screen_cords
     for(int j=0; j < 3; j++) {
-        Matrix mtmp = projection*ModelView*v2m(wc[j]);
+        Matrix mtmp = ctx->projection*ctx->modelview*v2m(wc[j]);
         Vec3f wctmp = m2v(mtmp);
         wc[j] = wctmp;
 
@@ -116,7 +113,6 @@ void triangle(ScreenBuffer *buffer, Vec3f v0, Vec3f v1, Vec3f v2,
             if (w0 >= 0 && w1 >= 0 && w2 >= 0) { //TODO, verify check within tri.
                 //get z value
                 float z = wc[0].z * w0 + wc[1].z * w1 + wc[2].z * w2;
-                //int zval = z*0xff;
                 int zval = (int)(255.f*(z + 1.f)/2.f);
                 
                 //get texture color Test
@@ -136,19 +132,15 @@ void triangle(ScreenBuffer *buffer, Vec3f v0, Vec3f v1, Vec3f v2,
                     (tex_color.bgra[1] << 8) + 
                     (tex_color.bgra[2] << 16);
                 
-                if(set_z(buffer, x, y, zval)) {
-                    set_color(buffer, x, y, color);
+                if(set_z(buffer_z, x, y, zval)) {
+                    set_color(buffer_rgba, x, y, color);
                 }
             }
         }
     }
-
-    //line(buffer, sc[0], sc[1], 0xffffffff);
-    //line(buffer, sc[1], sc[2], 0xffffffff);
-    //line(buffer, sc[2], sc[0], 0xffffffff);
 }
 
-void draw_model(ScreenBuffer* buffer, Model obj) {
+void draw_model(RenderContext* ctx, Model obj) {
     std::vector<int> faces = *obj.faces_verts;
     static std::vector<int> faces_uvs = *obj.faces_uvs;
     std::vector<float> verts = *obj.verts;
@@ -190,7 +182,7 @@ void draw_model(ScreenBuffer* buffer, Model obj) {
 
         Vec3f light_dir = Vec3f(0.f,0.f, -1.f);
         float intensity = dot(n, light_dir);
-            triangle(buffer, world_coords[0], world_coords[1], world_coords[2],
+            triangle(ctx, world_coords[0], world_coords[1], world_coords[2],
                     uv_coords[0], uv_coords[1], uv_coords[2], 0);
     }
 }

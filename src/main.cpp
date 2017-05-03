@@ -9,17 +9,17 @@
 #include "gl.h"
 
 TGAImage *texture;
-Matrix projection = Matrix::identity(4);
-Matrix ModelView;
-
 //static Matrix projection = Matrix::identity(4);
 //Matrix ModelView;
 //static TGAImage *texture;
 
+
+// TODO: Clean up triangle function, to fully use bary
+// Clean up api. Have rendering context and support vertex and fragment shaders.
+
 #define SCREEN_WIDTH  800
 #define SCREEN_HEIGHT 600
 
-static ScreenBuffer buffer;
 static int running = 1;
 static Model obj;
 
@@ -127,12 +127,12 @@ void load_obj(const char * filename, Model obj) {
     fclose(fp);
 }
 
-void render(ScreenBuffer *buffer, int count) {
+void render(RenderContext* ctx, int count) {
     //clear to black
-    memset(buffer->memory, 0, buffer->height*buffer->width*(sizeof(uint32_t)));
-    memset(buffer->zbuffer, 0, buffer->height*buffer->width*(sizeof(int)));
+    memset(ctx->buffers[0].memory, 0, ctx->buffers[0].height*ctx->buffers[0].width*(sizeof(uint32_t)));
+    memset(ctx->buffers[1].memory, 0, ctx->buffers[1].height*ctx->buffers[1].width*(sizeof(int)));
     
-    uint32_t *pixels = (uint32_t *)buffer->memory;
+    uint32_t *pixels = (uint32_t *)ctx->buffers[0].memory;
 
     //Line draw
     uint32_t white = 0xffffffff;
@@ -180,16 +180,16 @@ void render(ScreenBuffer *buffer, int count) {
     Vec3f eye = Vec3f(10.f*sin(t),0.f, 3.f);//3.f*cos(t));
     Vec3f c = Vec3f(0.f,0.f,0.f);
     //projection[3][2] = -1.f/(c.z-eye.z);
-    projection[3][2] = -1.f/(eye.z - c.z);
+    ctx->projection[3][2] = -1.f/(eye.z - c.z);
     Vec3f up = Vec3f(0.f,1.f,0.f);
-    lookat(eye, c, up);
+    lookat(ctx, eye, c, up);
     
     //Load texture
     //texture = new TGAImage();
     //texture->read_tga_file("res/head_diffuse.tga");
     
     //rasterize_obj(buffer, zbuffer, verts, faces);
-    draw_model(buffer, obj);
+    draw_model(ctx, obj);
 
     //Texture
     //  vt u v, array of texture coordinates.
@@ -230,11 +230,26 @@ int main() {
             SDL_TEXTUREACCESS_STREAMING, SCREEN_WIDTH, SCREEN_HEIGHT);
 
     //Make custom buffer to interface with program.
-    buffer.width = SCREEN_WIDTH;
-    buffer.height = SCREEN_HEIGHT;
-    buffer.pitch = SCREEN_WIDTH*32;
-    buffer.memory = malloc(SCREEN_WIDTH*SCREEN_HEIGHT*32);
-    buffer.zbuffer = (int *)malloc(SCREEN_WIDTH*SCREEN_HEIGHT*sizeof(int));
+    RenderContext ctx;
+    ctx.projection = Matrix::identity(4);
+    ScreenBuffer buffers[2];
+    ctx.buffers = buffers;
+
+    buffers[0].type = BUF_RGBA;
+    buffers[0].depth = sizeof(uint32_t);
+    buffers[0].width = SCREEN_WIDTH;
+    buffers[0].height = SCREEN_HEIGHT;
+    buffers[0].pitch = SCREEN_WIDTH*buffers[0].depth;
+    buffers[0].memory = malloc(SCREEN_WIDTH*SCREEN_HEIGHT*buffers[0].depth);
+    ctx.num_buffers++;
+
+    buffers[1].type = BUF_Z;
+    buffers[1].depth = sizeof(int);
+    buffers[1].width = SCREEN_WIDTH;
+    buffers[1].height = SCREEN_HEIGHT;
+    buffers[1].pitch = SCREEN_WIDTH*buffers[1].depth;
+    buffers[1].memory = malloc(SCREEN_WIDTH*SCREEN_HEIGHT*buffers[1].depth);
+    ctx.num_buffers++;
 
     //Check endianess
     uint32_t rmask, gmask, bmask, amask;
@@ -262,13 +277,14 @@ int main() {
     while(running) {
 
         //Render video
-        render(&buffer, count++);
+        //render(&buffer, count++);
+        render(&ctx, count++);
 
         uint32_t *pixels = (uint32_t *) pixel_mem;
         if (1) {
         //Transfer custom buffer to sdl texture
         uint32_t *pixels = (uint32_t *) pixel_mem;
-        uint32_t *Pixel = (uint32_t *)buffer.memory;
+        uint32_t *Pixel = (uint32_t *)ctx.buffers[0].memory;
         int Pitch = SCREEN_WIDTH*32;
         for(int Y = 0; Y < SCREEN_HEIGHT; ++Y) {
             for(int X = 0; X < SCREEN_WIDTH; ++X) {
@@ -283,7 +299,7 @@ int main() {
 
         //ZBUFF
         if(0) {
-            int *Pixel = (int *)buffer.zbuffer;
+            int *Pixel = (int *)ctx.buffers[1].memory;
             int Pitch = SCREEN_WIDTH*32;
             for(int Y = 0; Y < SCREEN_HEIGHT; ++Y) {
                 for(int X = 0; X < SCREEN_WIDTH; ++X) {
@@ -318,7 +334,9 @@ int main() {
         //SDL_Delay(100);
     }
     
-    free(buffer.memory);
+    for (int i=0; i < ctx.num_buffers; i++) {
+        free(ctx.buffers[i].memory);
+    }   
 
     return 0;
 }

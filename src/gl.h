@@ -11,14 +11,23 @@ extern TGAImage *texture;
 extern Matrix projection;
 extern Matrix ModelView;
 
-//video buffer to render to.
+
+typedef enum {BUF_RGBA, BUF_Z} buffer_type;
 typedef struct {
+    buffer_type type;
+    int depth;
     void *memory;
-    int *zbuffer;
     int width;
     int height;
     int pitch; 
 } ScreenBuffer;
+
+typedef struct {
+    Matrix projection;
+    Matrix modelview;
+    ScreenBuffer* buffers;
+    int num_buffers;
+} RenderContext;
 
 // Sets given pixel in the given buffer to the color
 void set_color(ScreenBuffer *buffer, int x, int y, uint32_t color);
@@ -44,7 +53,7 @@ typedef struct {
 
 
 // Function to draw triangles with uv for a model file.
-void draw_model(ScreenBuffer* buffer, Model obj);
+void draw_model(RenderContext* ctx, Model obj);
 
 // Projection transform. Turns 4x4 matrix into a 3x1 vector with coordinates
 // scaled according to projection.
@@ -76,7 +85,7 @@ static inline Matrix viewport(int x, int y, int w, int h) {
     return m;
 }
 
-static inline void lookat(Vec3f eye, Vec3f center, Vec3f up) {
+static inline void lookat(RenderContext* ctx, Vec3f eye, Vec3f center, Vec3f up) {
     //camera always points along z
     Vec3f z = (eye-center).normalize();
     Vec3f x = cross(up, z).normalize();
@@ -103,7 +112,7 @@ static inline void lookat(Vec3f eye, Vec3f center, Vec3f up) {
 
     //return Minv*Tr;
 
-    ModelView = Minv*Tr;
+    ctx->modelview = Minv*Tr;
 }
 
 #endif
