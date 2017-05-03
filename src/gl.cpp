@@ -56,16 +56,30 @@ void line(ScreenBuffer *buffer, Vec2i p0, Vec2i p1, uint32_t color) {
     } 
 }
 
+int barycentric(Vec2i A, Vec2i B, Vec2i C) {
+    // https://fgiesen.wordpress.com/2013/02/06/the-barycentric-conspirac/
+    // The 2D determinant gives us information about the triangle.
+    // Expression is >0 means that c lies to the left of ab => Counter-clockwise.
+    //
+    //                  | A.x  B.x  C.x |
+    // det2(A, B, C) =  | A.y  B.y  C.y | = ... 
+    //                  | 1    1    1   |
+    
+    return (B.x - A.x)*(C.y - A.y) - (C.x - A.x)*(B.y - A.y);
+    // This gives us the signed area of the parallellogram. (2x tri area.)
+}
+
 // Main rasterize function
 void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
         Vec3f v0uv, Vec3f v1uv, Vec3f v2uv, uint32_t color) {
-    //TODO change to use the boundingbox/barycentric method
+    
     ScreenBuffer *buffer_rgba = &ctx->buffers[0];
     ScreenBuffer *buffer_z = &ctx->buffers[1];
     
     Vec2i sc[3]; //screen coords
     Vec3f wc[3] = {v0, v1, v2}; //world coords
     
+    //TODO Move the following out to vertex shader.
     Matrix ViewPort = viewport(buffer_rgba->width/8, buffer_rgba->height/8, buffer_rgba->width*3/4, buffer_rgba->height*3/4);
     //set screen_cords
     for(int j=0; j < 3; j++) {
@@ -76,7 +90,6 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
         Vec3f sctmp = m2v(ViewPort*mtmp);
         sc[j] = Vec2i(sctmp.x, sctmp.y);
     }
-    
     //triangle normal
     Vec3f n = cross((wc[2]-wc[0]),(wc[1]-wc[0]));
     n.normalize();
@@ -98,19 +111,22 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
     if (sc[0].x > xmax) xmax = sc[0].x;
     if (sc[1].x > xmax) xmax = sc[1].x;
 
-    float area = det(sc[0], sc[1], sc[2]); //2x tri area
+    int area = barycentric(sc[0], sc[1], sc[2]); //2x tri area
 
     //Bounding box test
     for (int x=xmin; x<=xmax; x++) {
         for (int y=ymin; y<=ymax; y++) {
             Vec2i p = Vec2i(x, y);
             //barycentric (bc_clip?)
-            float w0 = det(sc[1],sc[2],p); //signed 2x area
-            float w1 = det(sc[2],sc[0],p); //signed 2x area
-            float w2 = det(sc[0],sc[1],p); //signed 2x area
+            float w0 = barycentric(sc[1],sc[2],p); //signed 2x area
+            float w1 = barycentric(sc[2],sc[0],p); //signed 2x area
+            float w2 = barycentric(sc[0],sc[1],p); //signed 2x area
             w0 /= area; w1 /= area; w2 /= area;
 
-            if (w0 >= 0 && w1 >= 0 && w2 >= 0) { //TODO, verify check within tri.
+            // Within tri?
+            if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
+                // Render pixel code
+
                 //get z value
                 float z = wc[0].z * w0 + wc[1].z * w1 + wc[2].z * w2;
                 int zval = (int)(255.f*(z + 1.f)/2.f);
@@ -124,15 +140,15 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
                 //     ((int)(rgb.y*0xff) << 8) + 
                 //     ((int)(rgb.z*0xff));
                 
-                Vec3f uv = v0uv * w0 + v1uv * w1 + v2uv * w2;
-                int tex_x = (int)(uv.x*(float)texture->get_width());
-                int tex_y = (int)((1.f-uv.y)*(float)texture->get_height());
-                TGAColor tex_color = texture->get(tex_x, tex_y);
-                color = (tex_color.bgra[0]) + 
-                    (tex_color.bgra[1] << 8) + 
-                    (tex_color.bgra[2] << 16);
                 
                 if(set_z(buffer_z, x, y, zval)) {
+                    Vec3f uv = v0uv * w0 + v1uv * w1 + v2uv * w2;
+                    int tex_x = (int)(uv.x*(float)texture->get_width());
+                    int tex_y = (int)((1.f-uv.y)*(float)texture->get_height());
+                    TGAColor tex_color = texture->get(tex_x, tex_y);
+                    color = (tex_color.bgra[0]) + 
+                        (tex_color.bgra[1] << 8) + 
+                        (tex_color.bgra[2] << 16);
                     set_color(buffer_rgba, x, y, color);
                 }
             }
