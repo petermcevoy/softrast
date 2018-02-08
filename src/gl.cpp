@@ -64,6 +64,7 @@ int barycentric(Vec2i A, Vec2i B, Vec2i C) {
     //                  | A.x  B.x  C.x |
     // det2(A, B, C) =  | A.y  B.y  C.y | = ... 
     //                  | 1    1    1   |
+    //
     
     return (B.x - A.x)*(C.y - A.y) - (C.x - A.x)*(B.y - A.y);
     // This gives us the signed area of the parallellogram. (2x tri area.)
@@ -72,7 +73,7 @@ int barycentric(Vec2i A, Vec2i B, Vec2i C) {
 // Main rasterize function
 void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
         Vec3f v0uv, Vec3f v1uv, Vec3f v2uv, uint32_t color) {
-    
+
     ScreenBuffer *buffer_rgba = &ctx->buffers[0];
     ScreenBuffer *buffer_z = &ctx->buffers[1];
     
@@ -80,19 +81,39 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
     Vec3f wc[3] = {v0, v1, v2}; //world coords
     
     //TODO Move the following out to vertex shader.
-    Matrix ViewPort = viewport(buffer_rgba->width/8, buffer_rgba->height/8, buffer_rgba->width*3/4, buffer_rgba->height*3/4);
+    //Matrix ViewPort = viewport(buffer_rgba->width/8, buffer_rgba->height/8, buffer_rgba->width*3/4, buffer_rgba->height*3/4);
+    //Matrix ViewPort = viewport(buffer_rgba->width/8, buffer_rgba->height/8, buffer_rgba->width*3/4, buffer_rgba->height*3/4);
+    Matrix ViewPort = Matrix::identity(4);
+    ViewPort[0][0] = buffer_rgba->width/5;
+    ViewPort[1][1] = buffer_rgba->height/5;
+    ViewPort[2][2] = 1.f; // How to handle depth?
+
+    //translation
+    ViewPort[0][3] = buffer_rgba->width/2;
+    ViewPort[1][3] = buffer_rgba->height/2;
+    ViewPort[2][3] = 1.f;
+    //ViewPort[0][3] = x+w/2.f;
+
+    // For subpixel accuracy
+    static const int sub_factor = 16;
+    static const int sub_mask = sub_factor - 1;
+
     //set screen_cords
     for(int j=0; j < 3; j++) {
         Matrix mtmp = ctx->projection*ctx->modelview*v2m(wc[j]);
         Vec3f wctmp = m2v(mtmp);
         wc[j] = wctmp;
 
+        // We want our screen coordinates to have subpixel accuracy.
+
         Vec3f sctmp = m2v(ViewPort*mtmp);
-        sc[j] = Vec2i(sctmp.x, sctmp.y);
+        sc[j] = Vec2i(sctmp.x*sub_factor, sctmp.y*sub_factor);
     }
+
     //triangle normal
     Vec3f n = cross((wc[2]-wc[0]),(wc[1]-wc[0]));
     n.normalize();
+    
 
     //Find bounding box to loop over.
     int ymin = sc[0].y;
@@ -111,12 +132,21 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
     if (sc[0].x > xmax) xmax = sc[0].x;
     if (sc[1].x > xmax) xmax = sc[1].x;
 
+    // For sub-pixel precision. 
+    // Round min/max to next integer multiple.
+            // Only sample at integer positions, if min is not integer coord. Pixel wont be hit.
+    
+    // Round start positions to nearest integer
+    xmin = (xmin + sub_mask) & ~sub_mask;
+    ymin = (ymin + sub_mask) & ~sub_mask;
+
     int area = barycentric(sc[0], sc[1], sc[2]); //2x tri area
 
     //Bounding box test
-    for (int x=xmin; x<=xmax; x++) {
-        for (int y=ymin; y<=ymax; y++) {
+    for (int x=xmin; x<=xmax; x+=sub_factor) {
+        for (int y=ymin; y<=ymax; y+=sub_factor) {
             Vec2i p = Vec2i(x, y);
+            
             //barycentric (bc_clip?)
             float w0 = barycentric(sc[1],sc[2],p); //signed 2x area
             float w1 = barycentric(sc[2],sc[0],p); //signed 2x area
@@ -132,24 +162,26 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
                 int zval = (int)(255.f*(z + 1.f)/2.f);
                 
                 //get texture color Test
-                // Vec3f v0col = Vec3f(1.f,0,0);
-                // Vec3f v1col = Vec3f(0,1.f,0);
-                // Vec3f v2col = Vec3f(0,0,1.f);
-                // Vec3f rgb = v0col * w0 + v1col * w1 + v2col * w2;
-                // color = ((int)(rgb.x*0xff) << 16) + 
-                //     ((int)(rgb.y*0xff) << 8) + 
-                //     ((int)(rgb.z*0xff));
+                 Vec3f v0col = Vec3f(1.f,0,0);
+                 Vec3f v1col = Vec3f(0,1.f,0);
+                 Vec3f v2col = Vec3f(0,0,1.f);
+                 Vec3f rgb = v0col * w0 + v1col * w1 + v2col * w2;
+                 color = ((int)(rgb.x*0xff) << 16) + 
+                     ((int)(rgb.y*0xff) << 8) + 
+                     ((int)(rgb.z*0xff));
                 
+                int buf_x = ceil((float)x/sub_factor);
+                int buf_y = ceil((float)y/sub_factor);
                 
-                if(set_z(buffer_z, x, y, zval)) {
-                    Vec3f uv = v0uv * w0 + v1uv * w1 + v2uv * w2;
+                if(set_z(buffer_z, buf_x, buf_y, zval)) {
+                    /*Vec3f uv = v0uv * w0 + v1uv * w1 + v2uv * w2;
                     int tex_x = (int)(uv.x*(float)texture->get_width());
                     int tex_y = (int)((1.f-uv.y)*(float)texture->get_height());
                     TGAColor tex_color = texture->get(tex_x, tex_y);
                     color = (tex_color.bgra[0]) + 
                         (tex_color.bgra[1] << 8) + 
-                        (tex_color.bgra[2] << 16);
-                    set_color(buffer_rgba, x, y, color);
+                        (tex_color.bgra[2] << 16);*/
+                    set_color(buffer_rgba, buf_x, buf_y, color);
                 }
             }
         }

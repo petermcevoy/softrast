@@ -177,7 +177,7 @@ void render(RenderContext* ctx, int count) {
     float t = count/20.f;
 
     //projection[3][2] = -1.f/cameraZ;
-    Vec3f eye = Vec3f(10.f*sin(t),0.f, 3.f);//3.f*cos(t));
+    Vec3f eye = Vec3f(5.f*sin(0.1*t),2.f*cos(0.2*t), 3.f);//3.f*cos(t));
     Vec3f c = Vec3f(0.f,0.f,0.f);
     //projection[3][2] = -1.f/(c.z-eye.z);
     ctx->projection[3][2] = -1.f/(eye.z - c.z);
@@ -266,11 +266,12 @@ int main() {
     obj.faces_uvs = new std::vector<int>;
     obj.verts = new std::vector<float>;
     obj.uvs = new std::vector<float>;
-    load_obj("res/head.obj", obj);
+    //load_obj("res/head.obj", obj);
+    load_obj("res/box.obj", obj);
 
     //Load texture
     texture = new TGAImage();
-    texture->read_tga_file("res/head_diffuse.tga");
+    //texture->read_tga_file("res/head_diffuse.tga");
     
     int count = 0;
     //Main display
