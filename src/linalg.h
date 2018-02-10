@@ -1,132 +1,257 @@
-#ifndef __LINALG_H__
-#define __LINALG_H__
-#include <cassert>
+#ifndef LINALG_H_INCLUDED
+#define LINALG_H_INCLUDED
 
-template <size_t DIM, typename T> struct Vec;
+#include <math.h>
 
-template <typename T> struct Vec2 {
-    Vec2() : x(T()), y(T()) {}
-    Vec2(T X, T Y) : x(X), y(Y) {}
-    T x,y;
-};
+#ifdef LINALG_SINGLE_PRECISION
+typedef float real;
+#else /* LINALG_SINGLE_PRECISION */
+typedef double real;
+#endif /* LINALG_SINGLE_PRECISION */
 
-template <typename T> struct Vec3 {
-    Vec3() : x(T()), y(T()), z(T()) {}
-    Vec3(T X, T Y, T Z) : x(X), y(Y), z(Z) {}
+typedef struct {
+    int e[2];
+} Vec2i;
 
-    Vec3<T> normalize() {
-        float val = std::sqrt(x*x + y*y + z*z);
+typedef struct {
+    float e[2];
+} Vec2f;
 
-        this->x *= 1.f/val;
-        this->y *= 1.f/val;
-        this->z *= 1.f/val;
-        return *this;
-    }
-    float norm() {
-        return std::sqrt(x*x + y*y + z*z);
-    }
+typedef struct {
+    float e[3];
+} Vec3f;
 
-    T x,y,z;
-};
+typedef struct {
+    float e[4];
+} Vec4f;
 
-template <typename T> Vec3<T> operator-(Vec3<T> lhs, const Vec3<T>& rhs) {
-    lhs.x -= rhs.x;
-    lhs.y -= rhs.y;
-    lhs.z -= rhs.z;
-    return lhs;
+typedef struct {
+    float e[2*2];
+} Mat22f;
+
+typedef struct {
+    float e[3*3];
+} Mat33f;
+
+typedef struct {
+    float e[4*4];
+} Mat44f;
+
+static inline int realeq(real a, real b, real eps) {
+    return (fabs((double)(a - b)) < (double)eps);       
 }
 
-template <typename T> Vec3<T> operator+(Vec3<T> lhs, const Vec3<T>& rhs) {
-    lhs.x += rhs.x;
-    lhs.y += rhs.y;
-    lhs.z += rhs.z;
-    return lhs;
+#define VEC_UTILS(fname, Vtype, type, dim) \
+    static inline void fname##set(Vtype *target, Vtype src) {               \
+        for (int i=0; i<dim; i++) {                                         \
+            target->e[i] = src.e[i];                                        \
+        }                                                                   \
+        return;                                                             \
+    }                                                                       \
+                                                                            \
+    static inline type* fname##el(Vtype *target, unsigned i) {              \
+        return &target->e[i];                                               \
+    }                                                                       \
+                                                                            \
+    static inline Vtype fname##add(Vtype a, Vtype b) {                      \
+        Vtype val;                                                          \
+        for (int i=0; i<dim; i++) {                                         \
+            val.e[i] = a.e[i] + b.e[i];                                     \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline Vtype fname##sub(Vtype a, Vtype b) {                      \
+        Vtype val;                                                          \
+        for (int i=0; i<dim; i++) {                                         \
+            val.e[i] = a.e[i] - b.e[i];                                     \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline Vtype fname##mul(Vtype v, type s) {                       \
+        Vtype val;                                                          \
+        for (int i=0; i<dim; i++) {                                         \
+            val.e[i] = v.e[i]*s;                                            \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline Vtype fname##div(Vtype v, type s) {                       \
+        Vtype val;                                                          \
+        for (int i=0; i<dim; i++) {                                         \
+            val.e[i] = v.e[i]/s;                                            \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline type fname##dot(Vtype a, Vtype b) {                       \
+        type val;                                                           \
+        for (int i=0; i<dim; i++) {                                         \
+            val += a.e[i]*b.e[i];                                           \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline type fname##norm(Vtype v) {                               \
+        type val = 0;                                                       \
+        for (int i=0; i<dim; i++) {                                         \
+            val += v.e[i]*v.e[i];                                           \
+        }                                                                   \
+        return sqrt(val);                                                   \
+    }                                                                       \
+                                                                            \
+    static inline Vtype fname##normalize(Vtype v) {                         \
+        return fname##div(v, fname##norm(v));                               \
+    }                                                                       \
+
+
+VEC_UTILS(v2i,Vec2i,int,2)
+VEC_UTILS(v2f,Vec2f,float,2)
+VEC_UTILS(v3f,Vec3f,float,3)
+
+static inline Vec3f v3fcross(Vec3f a, Vec3f b) {
+    Vec3f val;
+    val.e[0] = a.e[1]*b.e[2] - a.e[2]*b.e[1];
+    val.e[1] = a.e[2]*b.e[0] - a.e[0]*b.e[2];
+    val.e[2] = a.e[0]*b.e[1] - a.e[1]*b.e[0];
+    return val;
 }
 
-template <typename T> Vec3<T> cross(Vec3<T> v0, Vec3<T> v1) {
-    return Vec3<T>(
-            v0.y*v1.z - v0.z*v1.y,
-            v0.z*v1.x - v0.x*v1.z,
-            v0.x*v1.y - v0.y*v1.x
-            );
+#define MAT_UTILS(fname, Mtype, Vtype, type, dim) \
+    static inline void fname##set(Mtype *target, Mtype src) {               \
+        for (int i=0; i<dim*dim; i++) {                                     \
+            target->e[i] = src.e[i];                                       \
+        }                                                                   \
+        return;                                                             \
+    }                                                                       \
+                                                                            \
+    static inline void fname##setel(Mtype *target,                          \
+            int r, int c, type val) {                                       \
+            target->e[dim*r + c] = val;                                     \
+        return;                                                             \
+    }                                                                       \
+                                                                            \
+    static inline type fname##idx(Mtype m,                                  \
+            unsigned i, unsigned j) {                                       \
+        return ((type *)&m)[dim*i+j];                                       \
+    }                                                                       \
+                                                                            \
+    static inline Vtype fname##row(Mtype m,                                 \
+            int row) {                                                      \
+        Vtype val;                                                          \
+        for (int i=0; i<dim; i++) {                                         \
+            val.e[i] = fname##idx(m, row, i);                               \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline Vtype fname##col(Mtype m,                                 \
+            int col) {                                                      \
+        Vtype val;                                                          \
+        for (int i=0; i<dim; i++) {                                         \
+            val.e[i] = fname##idx(m, i, col);                               \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline Mtype fname##ident(void) {                                \
+        Mtype val;                                                          \
+        for (int i=0; i<dim; i++) {                                         \
+            for (int j=0; j<dim; j++) {                                     \
+                val.e[dim*i+j] = (i == j) ? 1.f : 0.f;                      \
+            }                                                               \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline Mtype fname##add(Mtype a,                                 \
+            Mtype b) {                                                      \
+        Mtype val;                                                          \
+        for (int i=0; i<dim*dim; i++) {                                     \
+            val.e[i] = a.e[i] + b.e[i];                                     \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline Mtype fname##sub(Mtype a,                                 \
+            Mtype b) {                                                      \
+        Mtype val;                                                          \
+        for (int i=0; i<dim*dim; i++) {                                     \
+            val.e[i] = a.e[i] - b.e[i];                                     \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline Mtype fname##mul(Mtype m,                                 \
+            type s) {                                                       \
+        Mtype val;                                                          \
+        for (int i=0; i<dim*dim; i++) {                                     \
+            val.e[i] = m.e[i] * s;                                          \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline Mtype fname##div(Mtype m,                                 \
+            type s) {                                                       \
+        Mtype val;                                                          \
+        for (int i=0; i<dim*dim; i++) {                                     \
+            val.e[i] = m.e[i] / s;                                          \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline Mtype fname##trans(Mtype m) {                             \
+        Mtype val;                                                          \
+        for (int i=0; i<dim; i++) {                                         \
+            for (int j=0; j<dim; j++) {                                     \
+                val.e[dim*i+j] = m.e[dim*j+i];                              \
+            }                                                               \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline Vtype fname##v##dim(Mtype m,                              \
+            Vtype v) {                                                      \
+        Vtype val;                                                          \
+        for (int i=0; i<dim; i++) {                                         \
+            val.e[i] = 0;                                                   \
+            for (int j=0; j<dim; j++) {                                     \
+                /* c_i = a_ij*b_j */                                        \
+                val.e[i] += m.e[dim*i+j]*v.e[j];                            \
+            }                                                               \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
+    static inline Mtype fname##fname(Mtype a, Mtype b) {                    \
+        Mtype val;                                                          \
+        for (int i=0; i<dim; i++) {                                         \
+            for (int j=0; j<dim; j++) {                                     \
+                val.e[dim*i+j] = 0;                                         \
+                /* C_ij = sum_k(A_ik*B_kj) */                               \
+                for (int k=0; k<dim; k++) {                                 \
+                    val.e[dim*i+j] += a.e[dim*i+k]*b.e[dim*k+j];            \
+                }                                                           \
+            }                                                               \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+
+MAT_UTILS(m22f,Mat22f,Vec2f,float,2)
+static inline float m22fdet(Mat22f m) {
+    return (m.e[2*0 + 0] * m.e[2*1 + 1] - m.e[2*0 + 1] * m.e[2*1 + 0]);
 }
 
-template <typename T> float dot(Vec3<T> v0, Vec3<T> v1) {
-    return v0.x*v1.x + v0.y*v1.y + v0.z*v1.z;
+MAT_UTILS(m33f,Mat33f,Vec3f,float,3)
+static inline float m33fdet(Mat33f m) {
+    return (
+        m.e[2*0 + 0]*(m.e[2*1 + 1]*m.e[2*2 + 2] - m.e[2*1 + 2]*m.e[2*2 + 1]) +
+       -m.e[2*0 + 1]*(m.e[2*1 + 0]*m.e[2*2 + 2] - m.e[2*1 + 2]*m.e[2*2 + 0]) +
+        m.e[2*0 + 2]*(m.e[2*1 + 0]*m.e[2*2 + 1] - m.e[2*1 + 1]*m.e[2*2 + 0])
+    );
 }
 
-template <typename T> Vec3<T> operator*(Vec3<T> lhs, float factor) {
-    lhs.x *= factor; lhs.y *= factor; lhs.z *= factor;
-    return lhs;
-}
+MAT_UTILS(m44f,Mat44f,Vec4f,float,4)
 
-
-////////
-
-typedef Vec2<int> Vec2i;
-typedef Vec3<float> Vec3f;
-
-static float det(Vec3f a, Vec3f b, Vec3f c) {
-    return a.x*(b.y-c.y) - a.y*(b.x - c.x) + (b.x*c.y - b.y*c.x);
-}
-
-static float det(Vec2i a, Vec2i b, Vec2i c) {
-    return a.x*(b.y-c.y) - a.y*(b.x - c.x) + (b.x*c.y - b.y*c.x);
-}
-
-
-//Matrix
-const int DEFAULT_ALLOC=4;
-struct Matrix {
-    std::vector<std::vector<float> > m;
-    int rows, cols;
-    
-    Matrix(int r=DEFAULT_ALLOC, int c=DEFAULT_ALLOC) : m(std::vector<std::vector<float> >(r, std::vector<float>(c, 0.f))), rows(r), cols(c) {}
-
-    static Matrix identity(int dimensions) {
-        Matrix E(dimensions, dimensions);
-        for (int i=0; i<dimensions; i++) {
-            for (int j=0; j<dimensions; j++) {
-                E[i][j] = (i==j ? 1.f : 0.f);
-            }
-        }
-        return E;
-    
-    }
-
-    std::vector<float>& operator[](const int i) {
-        assert(i>=0 && i<rows);
-        return m[i];
-    }
-
-    Matrix operator*(const Matrix& a) {
-        assert(cols == a.rows);
-        Matrix result(rows, a.cols);
-        for (int i=0; i<rows; i++) {
-            for (int j=0; j<cols; j++) {
-                result.m[i][j] = 0.f;
-                for (int k=0; k<cols; k++) {
-                    result.m[i][j] += m[i][k]*a.m[k][j];
-                }
-            }
-        }
-        return result;
-    }
-
-    Matrix transpose() {
-        Matrix result(cols,rows);
-        for (int i=0; i<rows; i++) {
-            for(int j=0; j<cols; j++) {
-                result[j][i] = m[i][j];
-            }
-        }
-        return result;
-    }
-
-    //Matrix inverse() {
-    //    assert(rows==cols);
-    //    TODO
-    //}
-};
-
-#endif // __LINALG_H__
+#endif /* LINALG_H_INCLUDED */
