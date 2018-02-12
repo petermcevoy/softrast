@@ -1,6 +1,4 @@
-#ifndef LINALG_H_INCLUDED
-#define LINALG_H_INCLUDED
-
+#pragma once
 #include <math.h>
 
 #ifdef LINALG_SINGLE_PRECISION
@@ -20,6 +18,10 @@ typedef struct {
 typedef struct {
     float e[3];
 } Vec3f;
+
+typedef struct {
+    int e[4];
+} Vec4i;
 
 typedef struct {
     float e[4];
@@ -109,6 +111,8 @@ static inline int realeq(real a, real b, real eps) {
 VEC_UTILS(v2i,Vec2i,int,2)
 VEC_UTILS(v2f,Vec2f,float,2)
 VEC_UTILS(v3f,Vec3f,float,3)
+VEC_UTILS(v4i,Vec4i,int,4)
+VEC_UTILS(v4f,Vec4f,float,4)
 
 static inline Vec3f v3fcross(Vec3f a, Vec3f b) {
     Vec3f val;
@@ -121,7 +125,7 @@ static inline Vec3f v3fcross(Vec3f a, Vec3f b) {
 #define MAT_UTILS(fname, Mtype, Vtype, type, dim) \
     static inline void fname##set(Mtype *target, Mtype src) {               \
         for (int i=0; i<dim*dim; i++) {                                     \
-            target->e[i] = src.e[i];                                       \
+            target->e[i] = src.e[i];                                        \
         }                                                                   \
         return;                                                             \
     }                                                                       \
@@ -129,6 +133,13 @@ static inline Vec3f v3fcross(Vec3f a, Vec3f b) {
     static inline void fname##setel(Mtype *target,                          \
             int r, int c, type val) {                                       \
             target->e[dim*r + c] = val;                                     \
+        return;                                                             \
+    }                                                                       \
+                                                                            \
+    static inline void fname##setcol(Mtype *target, int c, Vtype val) {     \
+            for (int i=0; i<dim; i++) {                                     \
+                target->e[dim*i + c] = val.e[i];                            \
+            }                                                               \
         return;                                                             \
     }                                                                       \
                                                                             \
@@ -254,4 +265,128 @@ static inline float m33fdet(Mat33f m) {
 
 MAT_UTILS(m44f,Mat44f,Vec4f,float,4)
 
-#endif /* LINALG_H_INCLUDED */
+// TODO LU decomposition
+static inline Mat44f m44finv(Mat44f m) {
+    Mat44f inv;
+
+    inv.e[0] = m.e[5]  * m.e[10] * m.e[15] - 
+        m.e[5]  * m.e[11] * m.e[14] - 
+        m.e[9]  * m.e[6]  * m.e[15] + 
+        m.e[9]  * m.e[7]  * m.e[14] +
+        m.e[13] * m.e[6]  * m.e[11] - 
+        m.e[13] * m.e[7]  * m.e[10];
+
+    inv.e[4] = -m.e[4]  * m.e[10] * m.e[15] + 
+        m.e[4]  * m.e[11] * m.e[14] + 
+        m.e[8]  * m.e[6]  * m.e[15] - 
+        m.e[8]  * m.e[7]  * m.e[14] - 
+        m.e[12] * m.e[6]  * m.e[11] + 
+        m.e[12] * m.e[7]  * m.e[10];
+
+    inv.e[8] = m.e[4]  * m.e[9] * m.e[15] - 
+        m.e[4]  * m.e[11] * m.e[13] - 
+        m.e[8]  * m.e[5] * m.e[15] + 
+        m.e[8]  * m.e[7] * m.e[13] + 
+        m.e[12] * m.e[5] * m.e[11] - 
+        m.e[12] * m.e[7] * m.e[9];
+
+    inv.e[12] = -m.e[4]  * m.e[9] * m.e[14] + 
+        m.e[4]  * m.e[10] * m.e[13] +
+        m.e[8]  * m.e[5] * m.e[14] - 
+        m.e[8]  * m.e[6] * m.e[13] - 
+        m.e[12] * m.e[5] * m.e[10] + 
+        m.e[12] * m.e[6] * m.e[9];
+
+    inv.e[1] = -m.e[1]  * m.e[10] * m.e[15] + 
+        m.e[1]  * m.e[11] * m.e[14] + 
+        m.e[9]  * m.e[2] * m.e[15] - 
+        m.e[9]  * m.e[3] * m.e[14] - 
+        m.e[13] * m.e[2] * m.e[11] + 
+        m.e[13] * m.e[3] * m.e[10];
+
+    inv.e[5] = m.e[0]  * m.e[10] * m.e[15] - 
+        m.e[0]  * m.e[11] * m.e[14] - 
+        m.e[8]  * m.e[2] * m.e[15] + 
+        m.e[8]  * m.e[3] * m.e[14] + 
+        m.e[12] * m.e[2] * m.e[11] - 
+        m.e[12] * m.e[3] * m.e[10];
+
+    inv.e[9] = -m.e[0]  * m.e[9] * m.e[15] + 
+        m.e[0]  * m.e[11] * m.e[13] + 
+        m.e[8]  * m.e[1] * m.e[15] - 
+        m.e[8]  * m.e[3] * m.e[13] - 
+        m.e[12] * m.e[1] * m.e[11] + 
+        m.e[12] * m.e[3] * m.e[9];
+
+    inv.e[13] = m.e[0]  * m.e[9] * m.e[14] - 
+        m.e[0]  * m.e[10] * m.e[13] - 
+        m.e[8]  * m.e[1] * m.e[14] + 
+        m.e[8]  * m.e[2] * m.e[13] + 
+        m.e[12] * m.e[1] * m.e[10] - 
+        m.e[12] * m.e[2] * m.e[9];
+
+    inv.e[2] = m.e[1]  * m.e[6] * m.e[15] - 
+        m.e[1]  * m.e[7] * m.e[14] - 
+        m.e[5]  * m.e[2] * m.e[15] + 
+        m.e[5]  * m.e[3] * m.e[14] + 
+        m.e[13] * m.e[2] * m.e[7] - 
+        m.e[13] * m.e[3] * m.e[6];
+
+    inv.e[6] = -m.e[0]  * m.e[6] * m.e[15] + 
+        m.e[0]  * m.e[7] * m.e[14] + 
+        m.e[4]  * m.e[2] * m.e[15] - 
+        m.e[4]  * m.e[3] * m.e[14] - 
+        m.e[12] * m.e[2] * m.e[7] + 
+        m.e[12] * m.e[3] * m.e[6];
+
+    inv.e[10] = m.e[0]  * m.e[5] * m.e[15] - 
+        m.e[0]  * m.e[7] * m.e[13] - 
+        m.e[4]  * m.e[1] * m.e[15] + 
+        m.e[4]  * m.e[3] * m.e[13] + 
+        m.e[12] * m.e[1] * m.e[7] - 
+        m.e[12] * m.e[3] * m.e[5];
+
+    inv.e[14] = -m.e[0]  * m.e[5] * m.e[14] + 
+        m.e[0]  * m.e[6] * m.e[13] + 
+        m.e[4]  * m.e[1] * m.e[14] - 
+        m.e[4]  * m.e[2] * m.e[13] - 
+        m.e[12] * m.e[1] * m.e[6] + 
+        m.e[12] * m.e[2] * m.e[5];
+
+    inv.e[3] = -m.e[1] * m.e[6] * m.e[11] + 
+        m.e[1] * m.e[7] * m.e[10] + 
+        m.e[5] * m.e[2] * m.e[11] - 
+        m.e[5] * m.e[3] * m.e[10] - 
+        m.e[9] * m.e[2] * m.e[7] + 
+        m.e[9] * m.e[3] * m.e[6];
+
+    inv.e[7] = m.e[0] * m.e[6] * m.e[11] - 
+        m.e[0] * m.e[7] * m.e[10] - 
+        m.e[4] * m.e[2] * m.e[11] + 
+        m.e[4] * m.e[3] * m.e[10] + 
+        m.e[8] * m.e[2] * m.e[7] - 
+        m.e[8] * m.e[3] * m.e[6];
+
+    inv.e[11] = -m.e[0] * m.e[5] * m.e[11] + 
+        m.e[0] * m.e[7] * m.e[9] + 
+        m.e[4] * m.e[1] * m.e[11] - 
+        m.e[4] * m.e[3] * m.e[9] - 
+        m.e[8] * m.e[1] * m.e[7] + 
+        m.e[8] * m.e[3] * m.e[5];
+
+    inv.e[15] = m.e[0] * m.e[5] * m.e[10] - 
+        m.e[0] * m.e[6] * m.e[9] - 
+        m.e[4] * m.e[1] * m.e[10] + 
+        m.e[4] * m.e[2] * m.e[9] + 
+        m.e[8] * m.e[1] * m.e[6] - 
+        m.e[8] * m.e[2] * m.e[5];
+
+    float det = m.e[0] * inv.e[0] + m.e[1] * inv.e[4] + 
+                m.e[2] * inv.e[8] + m.e[3] * inv.e[12];
+
+    if (det == 0)
+        printf("WARNING: det = 0");
+
+
+    return m44fmul(inv, 1/det);
+}

@@ -39,8 +39,8 @@ void seek_to(FILE *fp, char* prestr) {
 }
 
 // Get number elements needed for uvs, verts and faces.
-void get_obj_type_count(FILE *fp, int *nverts, int *nuvs, int *nfaces_verts,
-        int *nfaces_uvs) {
+void get_obj_type_count(FILE *fp, int *nverts, int *nuvs, int *nnormals, 
+        int *nfaces_verts) {
 
     // Save current position
     unsigned long position_verts;
@@ -65,13 +65,19 @@ void get_obj_type_count(FILE *fp, int *nverts, int *nuvs, int *nfaces_verts,
         fgets(str, 100, fp);
     } while(str_starts_with("vt", str));
     
+    // NORMALS
+    seek_to(fp, "vn"); fgets(str, 100, fp);
+    *nnormals = 0;
+    do {
+        *nnormals += 3; // 3 elements in a normal vector.
+        fgets(str, 100, fp);
+    } while(str_starts_with("vn", str));
+    
     // Faces
     seek_to(fp, "f"); fgets(str, 100, fp);
     *nfaces_verts = 0;
-    *nfaces_uvs = 0;
     do {
         *nfaces_verts += 3;
-        *nfaces_uvs += 3;
         fgets(str, 100, fp);
         if(feof(fp)) {
             printf("EOF");
@@ -86,8 +92,8 @@ void get_obj_type_count(FILE *fp, int *nverts, int *nuvs, int *nfaces_verts,
 }
 
 // Main load function
-Model load_obj(const char * filename) {
-    Model obj;
+Mesh load_obj(const char * filename) {
+    Mesh obj;
 
     // Open file.
     printf("Opening file %s\n",filename);
@@ -96,14 +102,16 @@ Model load_obj(const char * filename) {
     int line_len = 0;
 
     // Get element sizes.
-    get_obj_type_count(fp, 
-            &obj.nverts, &obj.nuvs, &obj.nfaces_verts, &obj.nfaces_uvs);
+    get_obj_type_count(fp, &obj.nverts, &obj.nuvs, &obj.nnormals,
+            &obj.nfaces_verts);
     
     // Allocate memory for data.
-    obj.verts       = (float*)malloc(obj.nverts*sizeof(float)); 
-    obj.uvs         = (float*)malloc(obj.nuvs*sizeof(float)); 
-    obj.faces_verts = (int*)malloc(obj.nfaces_verts*sizeof(int)); 
-    obj.faces_uvs   = (int*)malloc(obj.nfaces_uvs*sizeof(int)); 
+    obj.verts           = malloc(obj.nverts*sizeof(float)); 
+    obj.uvs             = malloc(obj.nuvs*sizeof(float)); 
+    obj.normals         = malloc(obj.nnormals*sizeof(float)); 
+    obj.faces_verts     = malloc(obj.nfaces_verts*sizeof(int)); 
+    obj.faces_uvs       = malloc(obj.nfaces_verts*sizeof(int)); 
+    obj.faces_normals   = malloc(obj.nfaces_verts*sizeof(int)); 
     
     // Save vertex data.
     seek_to(fp, "v");
@@ -136,6 +144,22 @@ Model load_obj(const char * filename) {
             obj.uvs[i++] = uvz;
         }
     }
+    
+    // Save Normal data.
+    seek_to(fp, "vn");
+    {
+        int i = 0;
+        while (i < obj.nnormals) {
+            fgets(str, 100, fp);
+            //assert(str_starts_with("vt", str));
+
+            float nx, ny, nz;
+            sscanf(str, "vn %f %f %f", &nx, &ny, &nz);
+            obj.normals[i++] = nx;
+            obj.normals[i++] = ny;
+            obj.normals[i++] = nz;
+        }
+    }
 
     // Save faces data.
     seek_to(fp, "f");
@@ -156,13 +180,16 @@ Model load_obj(const char * filename) {
             
             int vert_indecies[3];
             int uv_indecies[3];
-            sscanf(str, "f %d/%d/%*d %d/%d/%*d %d/%d/%*d", 
-                    &vert_indecies[0], &uv_indecies[0],
-                    &vert_indecies[1], &uv_indecies[1],
-                    &vert_indecies[2], &uv_indecies[2]);
+            int n_indecies[3];
+            sscanf(str, "f %d/%d/%d %d/%d/%d %d/%d/%d", 
+                    &vert_indecies[0], &uv_indecies[0], &n_indecies[0],
+                    &vert_indecies[1], &uv_indecies[1], &n_indecies[1], 
+                    &vert_indecies[2], &uv_indecies[2], &n_indecies[2]
+                    );
             for(int j=0; j < 3; j++) {
                 obj.faces_verts[i] = vert_indecies[j] - 1;
                 obj.faces_uvs[i] = uv_indecies[j] - 1;
+                obj.faces_normals[i] = n_indecies[j] - 1;
                 i++;
             }
         }

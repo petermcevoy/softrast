@@ -1,6 +1,4 @@
-#ifndef __PMMGL_H__
-#define __PMMGL_H__
-
+#pragma once
 #include <stdlib.h>
 #include <stdio.h>
 #include "linalg.h"
@@ -16,9 +14,22 @@ typedef struct {
 } ScreenBuffer;
 
 typedef struct {
+    Vec4f (*vertex_shader)(Vec3f, int, void*);
+    int (*fragment_shader)(Vec3f, Vec3f*, void*);
     Mat44f projection;
     Mat44f modelview;
-    ScreenBuffer* buffers;
+    Mat44f mvp; //modelview*projection
+    Mat44f viewport;
+    Mat33f varying_vertex_pos;
+    Mat33f varying_vertex_normal;
+} ShaderBase;
+
+typedef struct {
+    Mat44f projection;
+    Mat44f modelview;
+    Mat44f viewport;
+    ShaderBase *shader;
+    ScreenBuffer *buffers;
     int num_buffers;
 } RenderContext;
 
@@ -35,52 +46,35 @@ void line(ScreenBuffer *buffer, int x0, int y0, int x1, int y1, uint32_t color);
 // Draws and fills triangle with verticies v0, v1, v2 and corresponding
 // uv coordinates.
 void triangle(RenderContext *ctx, Vec3f v0, Vec3f v1, Vec3f v2,
-        Vec3f v0uv, Vec3f v1uv, Vec3f v2uv, uint32_t color);
+        Vec3f v0uv, Vec3f v1uv, Vec3f v2uv,
+        Vec3f n0, Vec3f n1, Vec3f n2, uint32_t color);
 
 // Struct to represent 3d mesh models.
 typedef struct {
-    float *verts;      //stored as v0.x v0.y v0.z v1.x v.1.y ...
-    float *uvs;        //stored as uv0.x uv0.y uv0.z uv1.x ...
-    int *faces_verts;  //sets of 3, indecies for vertex positions
-    int *faces_uvs;    //sets of 3, indecies for uv coordinates
+    float *verts;           //stored as v0.x v0.y v0.z v1.x v.1.y ...
+    float *uvs;             //stored as uv0.x uv0.y uv0.z uv1.x ...
+    float *normals;         //stored as n0.x n0.y n0.z n1.x ...
+    int *faces_verts;       //sets of 3, indecies for vertex positions
+    int *faces_uvs;         //sets of 3, indecies for uv coordinates
+    int *faces_normals;     //sets of 3, indecies for vertex normals
 
-    int nverts;      //stored as v0.x v0.y v0.z v1.x v.1.y ...
-    int nuvs;        //stored as uv0.x uv0.y uv0.z uv1.x ...
-    int nfaces_verts;  //sets of 3, indecies for vertex positions
-    int nfaces_uvs;    //sets of 3, indecies for uv coordinates
-} Model;
+    int nverts;      
+    int nuvs;        
+    int nnormals;    
+    int nfaces_verts;
+} Mesh;
 
-inline void free_model_data(Model obj) {
+inline void free_model_data(Mesh obj) {
     free(obj.verts);
     free(obj.uvs);
+    free(obj.normals);
     free(obj.faces_verts);
     free(obj.faces_uvs);
     return;
 }
 
 // Function to draw triangles with uv for a model file.
-void draw_model(RenderContext* ctx, Model obj);
-
-// Projection transform. Turns 4x4 matrix into a 3x1 vector with coordinates
-// scaled according to projection.
-static inline Vec3f m2v(Mat44f m) {
-    Vec3f v = {{ 
-        m.e[4*0 + 0]/m.e[4*3 + 0],
-        m.e[4*1 + 0]/m.e[4*3 + 0],
-        m.e[4*2 + 0]/m.e[4*3 + 0]
-    }};
-    return v;
-};
-
-// Turns 3x1 vector into 4x1 vector.
-static inline Mat44f v2m(Vec3f v) {
-    Mat44f m;
-    m.e[4*0 + 0] = v.e[0];
-    m.e[4*1 + 0] = v.e[1];
-    m.e[4*2 + 0] = v.e[2];
-    m.e[4*3 + 0] = 1.f;
-    return m;
-}
+void draw_model(RenderContext* ctx, Mesh obj);
 
 // Viewport projection. Maps [-1, 1]x[-1,1] to [0, w]x[0,h].
 static inline Mat44f viewport(int x, int y, int w, int h) {
@@ -125,5 +119,3 @@ static inline void lookat(RenderContext* ctx, Vec3f eye, Vec3f center, Vec3f up)
     m44fset(&ctx->modelview, m44fm44f(minv,tr));
     return;
 }
-
-#endif

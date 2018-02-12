@@ -4,6 +4,6 @@
 #include <string.h>
 
 // .obj Model loader.
-Model load_obj(const char * filename);
+Mesh load_obj(const char * filename);
 
 #endif

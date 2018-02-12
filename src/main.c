@@ -1,21 +1,22 @@
 #include <SDL2/SDL.h>
 #include "gl.h"
 #include "obj.h"
+#include "example_shaders.h"
 
 // TODO:    *   Clean up triangle function, to fully use bary
-//          *   Clean up api. Have rendering context and support vertex and
-//              fragment shaders.
 
 #define SCREEN_WIDTH  800
 #define SCREEN_HEIGHT 600
 
 static int running = 1;
-static Model obj;
+static Mesh obj;
     
 static uint32_t white = 0xffffffff;
 static uint32_t red = 0x00ff0000;
 static uint32_t green = 0x0000ff00;
 static uint32_t blue = 0x000000ff;
+
+ShaderUV simple_shader;
 
 // Render function, called from loop in main.
 void render(RenderContext* ctx, int count) {
@@ -24,22 +25,30 @@ void render(RenderContext* ctx, int count) {
     memset(ctx->buffers[1].memory, 0, ctx->buffers[1].height*ctx->buffers[1].width*(sizeof(int)));
     
     uint32_t *pixels = (uint32_t *)ctx->buffers[0].memory;
-    ScreenBuffer buffer = ctx->buffers[0];
-
-    // Line draw
-    //line(&buffer, 0, 0, 100, 100, white);
+    float t = 0.1f*count;
 
     // Set Projection
-    float t = 0.1f*count;
-    Vec3f eye = {{5.f*sin(0.1*t),2.f*cos(0.2*t), 3.f}};//3.f*cos(t));
-    Vec3f c = {{0.f,0.f,0.f}};
-    m44fsetel(&ctx->projection, 3, 2, -1.f/(eye.e[2] - c.e[2]));
-    Vec3f up = {{0.f,1.f,0.f}};
-    lookat(ctx, eye, c, up);
+    {
+        Vec3f eye = {{5.f*sin(0.1*t),2.f*cos(0.2*t), 3.f}};//3.f*cos(t));
+        Vec3f c = {{0.f,0.f,0.f}};
+        m44fsetel(&ctx->projection, 3, 2, -1.f/(eye.e[2] - c.e[2]));
+        Vec3f up = {{0.f,1.f,0.f}};
+        lookat(ctx, eye, c, up);
+    }
     
-    // Load texture
-    // TODO...
+    // Set shader vars.
+    {
+        Vec3f light_dir = {{0.f, 0.f, -1.f}};
+        v3fset(&simple_shader.light_dir, light_dir);
+        simple_shader.intensity = 0.5 + 0.3*sin(t);
+        simple_shader.base.modelview = ctx->modelview;
+        simple_shader.base.projection = ctx->projection;
+        simple_shader.base.mvp = m44fm44f(ctx->projection, ctx->modelview);
+        simple_shader.base.viewport = ctx->viewport;
+    }
     
+    // Assign shader pair to render context.
+    ctx->shader = (ShaderBase *)&simple_shader;
     draw_model(ctx, obj);
 }
 
@@ -94,6 +103,15 @@ int main() {
     buffers[1].memory = malloc(SCREEN_WIDTH*SCREEN_HEIGHT*buffers[1].depth);
     ctx.num_buffers++;
 
+    m44fset(&ctx.viewport, m44fident());
+    m44fsetel(&ctx.viewport, 0, 0, buffers[0].width/3);
+    m44fsetel(&ctx.viewport, 1, 1, buffers[0].height/3);
+    m44fsetel(&ctx.viewport, 2, 2, 1.f);
+    // Translation
+    m44fsetel(&ctx.viewport, 0, 3, buffers[0].width/2);
+    m44fsetel(&ctx.viewport, 1, 3, buffers[0].height/2);
+    m44fsetel(&ctx.viewport, 2, 3, 1.f);
+
     // TODO: Check endianess
     uint32_t rmask = 0xff000000;
     uint32_t gmask = 0x00ff0000;
@@ -103,17 +121,20 @@ int main() {
     void* pixel_mem = malloc(SCREEN_WIDTH*SCREEN_HEIGHT*4);
     
     // Load obj file
-    obj = load_obj("res/box.obj");
-
-    //Load texture
-    // TODO...
+    obj = load_obj("res/head.obj");
     
+    // Load textures
+    // TODO...
+
+    // Setup shaders
+    simple_shader.base.vertex_shader = &shader_uv_vertex;
+    simple_shader.base.fragment_shader = &shader_uv_fragment;
+
     // Main display
     int count = 0;
     while(running) {
         //Render video
         render(&ctx, count++);
-        
         
         //Transfer custom buffer to sdl texture
         uint32_t *pixels = (uint32_t *) pixel_mem;
