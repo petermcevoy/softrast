@@ -1,11 +1,25 @@
 #pragma once
 #include <math.h>
 
-#ifdef LINALG_SINGLE_PRECISION
-typedef float real;
-#else /* LINALG_SINGLE_PRECISION */
-typedef double real;
-#endif /* LINALG_SINGLE_PRECISION */
+// https://en.wikipedia.org/wiki/Fast_inverse_square_root
+static float q_rsqrt( float number ) {
+	union {
+		float f;
+		long i;
+	} conv;
+	
+	float x2;
+	const float threehalfs = 1.5F;
+
+	x2 = number * 0.5F;
+	conv.f  = number;
+	conv.i  = 0x5f3759df - ( conv.i >> 1 );
+	conv.f  = conv.f * ( threehalfs - ( x2 * conv.f * conv.f ) );
+	return conv.f;
+}
+static inline float i_rsqrt( float number ) {
+	return 1.f/sqrt(number);
+}
 
 typedef struct {
     int e[2];
@@ -38,10 +52,6 @@ typedef struct {
 typedef struct {
     float e[4*4];
 } Mat44f;
-
-static inline int realeq(real a, real b, real eps) {
-    return (fabs((double)(a - b)) < (double)eps);       
-}
 
 #define VEC_UTILS(fname, Vtype, type, dim) \
     static inline void fname##set(Vtype *target, Vtype src) {               \
@@ -88,7 +98,7 @@ static inline int realeq(real a, real b, real eps) {
     }                                                                       \
                                                                             \
     static inline type fname##dot(Vtype a, Vtype b) {                       \
-        type val;                                                           \
+        type val = 0.f;                                                     \
         for (int i=0; i<dim; i++) {                                         \
             val += a.e[i]*b.e[i];                                           \
         }                                                                   \
@@ -96,7 +106,7 @@ static inline int realeq(real a, real b, real eps) {
     }                                                                       \
                                                                             \
     static inline type fname##norm(Vtype v) {                               \
-        type val = 0;                                                       \
+        type val = 0.f;                                                     \
         for (int i=0; i<dim; i++) {                                         \
             val += v.e[i]*v.e[i];                                           \
         }                                                                   \
@@ -104,7 +114,9 @@ static inline int realeq(real a, real b, real eps) {
     }                                                                       \
                                                                             \
     static inline Vtype fname##normalize(Vtype v) {                         \
-        return fname##div(v, fname##norm(v));                               \
+        /* Use fast inverese square root q_rsqrt. */                        \
+        /*return fname##mul(v, q_rsqrt(fname##dot(v,v))); */                \
+        return fname##mul(v, i_rsqrt(fname##dot(v,v)));                     \
     }                                                                       \
 
 
@@ -113,6 +125,15 @@ VEC_UTILS(v2f,Vec2f,float,2)
 VEC_UTILS(v3f,Vec3f,float,3)
 VEC_UTILS(v4i,Vec4i,int,4)
 VEC_UTILS(v4f,Vec4f,float,4)
+
+static inline Vec3f v4f2v3f(Vec4f a) {
+    Vec3f val = {{a.e[0], a.e[1], a.e[2]}};
+    return val;
+}
+static inline Vec3f f2v3f(float a) {
+    Vec3f val = {{a, a, a}};
+    return val;
+}
 
 static inline Vec3f v3fcross(Vec3f a, Vec3f b) {
     Vec3f val;

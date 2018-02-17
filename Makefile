@@ -1,16 +1,15 @@
-default:build run
+default:build
 
-#SOURCES = src/main.cpp src/tgaimage.cpp src/gl.cpp src/obj.c
-#SOURCES = linalg_test.c
-SOURCES = src/main.c src/gl.c src/obj.c
-INCLUDES= -I/usr/local/include 
+CC		= clang
+CFLAGS	= -g -O3
+SOURCES = examples/objpreview.c src/gl.c src/obj.c
+INCLUDES= -I/usr/local/include -Isrc/ -Iexamples/
 LIBS    = -L/usr/local/lib -lSDL2
 
 .PHONY: build
 
-build:
-	clang -g $(SOURCES) $(INCLUDES) $(LIBS) -O3 -o build/main -Wl,-v
-run:
-	./build/main
+objpreview: examples/objpreview.c
+	$(CC) $(CFLAGS) examples/objpreview.c src/gl.c src/obj.c $(INCLUDES) $(LIBS) -o build/objpreview -Wl,-v
+build: objpreview
 clean:
 	rm build/*

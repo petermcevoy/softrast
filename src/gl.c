@@ -1,5 +1,10 @@
 #include "gl.h"
 
+inline float clamp(float x, float min, float max)
+{
+    return (x < min) ? min : (x > max) ? max : x;
+}
+
 static inline void swap(int *a, int *b) {
     int *tmpa = a;
     a = b;
@@ -64,7 +69,7 @@ void line(ScreenBuffer *buffer, int x0, int y0, int x1, int y1,
     } 
 }
 
-inline int barycentric(Vec2i A, Vec2i B, Vec2i C) {
+static inline int barycentric(Vec2i A, Vec2i B, Vec2i C) {
     // https://fgiesen.wordpress.com/2013/02/06/the-barycentric-conspirac/
     // The 2D determinant gives us information about the triangle.
     // Expression is >0 means that c lies to the left of ab => Counter-clockwise.
@@ -94,27 +99,36 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
     static const int sub_factor = 16;
     static const int sub_mask = sub_factor - 1;
 
-    // Set values of default varying variables of base shader.
-    m33fsetcol(&ctx->shader->varying_vertex_normal, 0, n0);
-    m33fsetcol(&ctx->shader->varying_vertex_normal, 1, n1);
-    m33fsetcol(&ctx->shader->varying_vertex_normal, 2, n2);
-    m33fsetcol(&ctx->shader->varying_vertex_pos, 0, vertex_pos[0]);
-    m33fsetcol(&ctx->shader->varying_vertex_pos, 1, vertex_pos[1]);
-    m33fsetcol(&ctx->shader->varying_vertex_pos, 2, vertex_pos[2]);
 
     Vec4f vertex_pos_t[3]; // Transformed vertex positions.
     for(int j=0; j < 3; j++) {
+        // Call vertex shader
         vertex_pos_t[j] = ctx->shader->vertex_shader(vertex_pos[j], j,
                 ctx->shader);
 
-        // Make screen coords and perspective divide. Multiply with sub_factor
-        // for sub-pixel precision.
+        // Vertex post-processing:
         {
+            // Viewport transform and perspective divide.
             Vec4f sctmp = m44fv4(ctx->viewport, v4fdiv(vertex_pos_t[j],
                         vertex_pos_t[j].e[3]));
+
+            // Sub-pixel preciision.
             sc[j].e[0] = sctmp.e[0]*sub_factor;
             sc[j].e[1] = sctmp.e[1]*sub_factor;
         }
+    }
+
+    // Set values of default varying variables of base shader.
+    {
+        m33fsetcol(&ctx->shader->varying_vertex_normal, 0, n0);
+        m33fsetcol(&ctx->shader->varying_vertex_normal, 1, n1);
+        m33fsetcol(&ctx->shader->varying_vertex_normal, 2, n2);
+        m33fsetcol(&ctx->shader->varying_vertex_pos, 0, vertex_pos[0]);
+        m33fsetcol(&ctx->shader->varying_vertex_pos, 1, vertex_pos[1]);
+        m33fsetcol(&ctx->shader->varying_vertex_pos, 2, vertex_pos[2]);
+        m33fsetcol(&ctx->shader->varying_vertex_post, 0, v4f2v3f(vertex_pos_t[0]));
+        m33fsetcol(&ctx->shader->varying_vertex_post, 1, v4f2v3f(vertex_pos_t[1]));
+        m33fsetcol(&ctx->shader->varying_vertex_post, 2, v4f2v3f(vertex_pos_t[2]));
     }
 
     //Find bounding box to loop over.
@@ -172,6 +186,9 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
                 if(set_z(buffer_z, buf_x, buf_y, zval)) {
                     Vec3f col;
                     ctx->shader->fragment_shader(bar, &col, ctx->shader);
+                    col.e[0] = clamp(col.e[0], 0.f, 1.f);
+                    col.e[1] = clamp(col.e[1], 0.f, 1.f);
+                    col.e[2] = clamp(col.e[2], 0.f, 1.f);
                     color = ((int)(col.e[0]*0xff) << 16) + 
                         ((int)(col.e[1]*0xff) << 8) + 
                         ((int)(col.e[2]*0xff));
@@ -194,9 +211,11 @@ void draw_model(RenderContext* ctx, Mesh obj) {
     for(int i = 0; i < n_faces; i=i+3) {
         int vert_indecies[3], uv_indecies[3], normal_indecies[3];
 
-        uv_indecies[0] = faces_uvs[i];
-        uv_indecies[1] = faces_uvs[i+1];
-        uv_indecies[2] = faces_uvs[i+2];
+        if (obj.nuvs > 0) {
+            uv_indecies[0] = faces_uvs[i];
+            uv_indecies[1] = faces_uvs[i+1];
+            uv_indecies[2] = faces_uvs[i+2];
+        }
         Vec3f uv_coords[3];
 
         vert_indecies[0] = faces[i];
@@ -204,28 +223,35 @@ void draw_model(RenderContext* ctx, Mesh obj) {
         vert_indecies[2] = faces[i+2];
         Vec3f world_coords[3];
         
-        normal_indecies[0] = faces_normals[i];
-        normal_indecies[1] = faces_normals[i+1];
-        normal_indecies[2] = faces_normals[i+2];
+        if (obj.nnormals > 0) {
+            normal_indecies[0] = faces_normals[i];
+            normal_indecies[1] = faces_normals[i+1];
+            normal_indecies[2] = faces_normals[i+2];
+        }
         Vec3f normal_coords[3];
         
         // Set verts and uvs
         for(int j=0; j < 3; j++) {
             Vec3f v, uv, n;
+            uv.e[0] = 0.f; uv.e[1] = 0.f; uv.e[2] = 0.f; 
 
             v.e[0] = verts[ 3*vert_indecies[j] ];
             v.e[1] = verts[ 3*vert_indecies[j] + 1];
             v.e[2] = verts[ 3*vert_indecies[j] + 2];
             world_coords[j] = v;
 
-            uv.e[0] = uvs[ 3*uv_indecies[j] ];
-            uv.e[1] = uvs[ 3*uv_indecies[j] + 1];
-            uv.e[2] = uvs[ 3*uv_indecies[j] + 2];
+            if (obj.nuvs > 0) {
+                uv.e[0] = uvs[ 3*uv_indecies[j] ];
+                uv.e[1] = uvs[ 3*uv_indecies[j] + 1];
+                uv.e[2] = uvs[ 3*uv_indecies[j] + 2];
+            }
             uv_coords[j] = uv;
 
-            n.e[0] = normals[ 3*normal_indecies[j] ];
-            n.e[1] = normals[ 3*normal_indecies[j] + 1];
-            n.e[2] = normals[ 3*normal_indecies[j] + 2];
+            if (obj.nnormals > 0) {
+                n.e[0] = normals[ 3*normal_indecies[j] ];
+                n.e[1] = normals[ 3*normal_indecies[j] + 1];
+                n.e[2] = normals[ 3*normal_indecies[j] + 2];
+            } 
             normal_coords[j] = n;
         }
 

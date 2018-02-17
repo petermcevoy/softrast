@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include "linalg.h"
 
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#define MAX(a,b) (((a)>(b))?(a):(b))
+
 typedef enum {BUF_RGBA, BUF_Z} buffer_type;
 typedef struct {
     buffer_type type;
@@ -21,6 +24,7 @@ typedef struct {
     Mat44f mvp; //modelview*projection
     Mat44f viewport;
     Mat33f varying_vertex_pos;
+    Mat33f varying_vertex_post;
     Mat33f varying_vertex_normal;
 } ShaderBase;
 
@@ -32,6 +36,8 @@ typedef struct {
     ScreenBuffer *buffers;
     int num_buffers;
 } RenderContext;
+
+float clamp(float x, float min, float max);
 
 // Sets given pixel in the given buffer to the color
 void set_color(ScreenBuffer *buffer, int x, int y, uint32_t color);
