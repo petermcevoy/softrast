@@ -16,8 +16,10 @@ void set_color(ScreenBuffer *buffer, int x, int y, uint32_t color) {
     uint32_t *pixels = (uint32_t *)buffer->memory;
     int ny = (buffer->height-1) - y;
 
-    if (!(x >= 0 && x < buffer->width) || !(ny >= 0 && ny < buffer->height))
-        printf("OUT OF BOUNDS!\n");
+    if (!(x >= 0 && x < buffer->width) || !(ny >= 0 && ny < buffer->height)) {
+        //printf("OUT OF BOUNDS!\n");
+        return;
+    }
 
     pixels[ny*buffer->width + x] = color;
     return;
@@ -27,8 +29,10 @@ int set_z(ScreenBuffer *buffer, int x, int y, int z) {
     int *zbuffer = (int *)buffer->memory;
     int ny = (buffer->height-1) - y;
 
-    if (!(x >= 0 && x < buffer->width) || !(ny >= 0 && ny < buffer->height))
-        printf("OUT OF BOUNDS!\n");
+    if (!(x >= 0 && x < buffer->width) || !(ny >= 0 && ny < buffer->height)) {
+        //printf("OUT OF BOUNDS!\n");
+        return 0;
+    }
 
     if (zbuffer[ny*buffer->width + x] < z){
         zbuffer[ny*buffer->width + x] = z;
@@ -100,18 +104,21 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
     static const int sub_mask = sub_factor - 1;
 
 
-    Vec4f vertex_pos_t[3]; // Transformed vertex positions.
+    Vec4f vertex_pos_t[3];      // Transformed vertex positions.
+    Vec4f vertex_pos_clip[3];   // Transformed vertex positions in clip space.
     for(int j=0; j < 3; j++) {
         // Call vertex shader
         vertex_pos_t[j] = ctx->shader->vertex_shader(vertex_pos[j], j,
                 ctx->shader);
+        
+        // Perspective divide to get clip space.
+        vertex_pos_clip[j] = v4fdiv(vertex_pos_t[j], vertex_pos_t[j].e[3]);
 
         // Vertex post-processing:
         {
-            // Viewport transform and perspective divide.
-            Vec4f sctmp = m44fv4(ctx->viewport, v4fdiv(vertex_pos_t[j],
-                        vertex_pos_t[j].e[3]));
-
+            // Viewport transform
+            Vec4f sctmp = m44fv4(ctx->viewport, vertex_pos_clip[j]);
+            
             // Sub-pixel preciision.
             sc[j].e[0] = sctmp.e[0]*sub_factor;
             sc[j].e[1] = sctmp.e[1]*sub_factor;
@@ -123,12 +130,12 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
         m33fsetcol(&ctx->shader->varying_vertex_normal, 0, n0);
         m33fsetcol(&ctx->shader->varying_vertex_normal, 1, n1);
         m33fsetcol(&ctx->shader->varying_vertex_normal, 2, n2);
-        m33fsetcol(&ctx->shader->varying_vertex_pos, 0, vertex_pos[0]);
-        m33fsetcol(&ctx->shader->varying_vertex_pos, 1, vertex_pos[1]);
-        m33fsetcol(&ctx->shader->varying_vertex_pos, 2, vertex_pos[2]);
-        m33fsetcol(&ctx->shader->varying_vertex_post, 0, v4f2v3f(vertex_pos_t[0]));
-        m33fsetcol(&ctx->shader->varying_vertex_post, 1, v4f2v3f(vertex_pos_t[1]));
-        m33fsetcol(&ctx->shader->varying_vertex_post, 2, v4f2v3f(vertex_pos_t[2]));
+        m33fsetcol(&ctx->shader->varying_vertex_pos,    0, vertex_pos[0]);
+        m33fsetcol(&ctx->shader->varying_vertex_pos,    1, vertex_pos[1]);
+        m33fsetcol(&ctx->shader->varying_vertex_pos,    2, vertex_pos[2]);
+        m33fsetcol(&ctx->shader->varying_vertex_post,   0, v4f2v3f(vertex_pos_t[0]));
+        m33fsetcol(&ctx->shader->varying_vertex_post,   1, v4f2v3f(vertex_pos_t[1]));
+        m33fsetcol(&ctx->shader->varying_vertex_post,   2, v4f2v3f(vertex_pos_t[2]));
     }
 
     //Find bounding box to loop over.
@@ -173,9 +180,10 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
             // Check if within triangle.
             if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
                 // Get z value by interpolating using barycentric weights.
-                float z =   vertex_pos_t[0].e[2] * w0 +
-                            vertex_pos_t[1].e[2] * w1 +
-                            vertex_pos_t[2].e[2] * w2;
+                float z =   vertex_pos_clip[0].e[2] * w0 +
+                            vertex_pos_clip[1].e[2] * w1 +
+                            vertex_pos_clip[2].e[2] * w2;
+
                 int zval = (int)(255.f*(z + 1.f)/2.f);
                 
                 int buf_x = ceil((float)x/sub_factor);

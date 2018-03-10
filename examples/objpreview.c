@@ -17,13 +17,19 @@ void render(RenderContext* ctx, int count) {
     memset(ctx->buffers[1].memory, 0, ctx->buffers[1].height*ctx->buffers[1].width*(sizeof(int)));
     
     uint32_t *pixels = (uint32_t *)ctx->buffers[0].memory;
-    float t = 0.1f*count;
+    float t = 0.008f*count;
 
-    // Set Projection
+    // Set Projection and view
     {
-        Vec3f eye = {{5.f*sin(0.1*t),2.f*cos(0.2*t), 3.f}};//3.f*cos(t));
+        float varx = sinf(t*1.f);
+        float vary = cosf(t*0.5f);
+        float varz = cosf(t*1.f);
+        static float r = 2.f;
+        Mat44f proj = perspective(80.f, 4.f/3.f, -2.f, -4.5f);
+        m44fset(&ctx->projection, proj);
+
+        Vec3f eye = {{r*varx, vary, r*varz}};
         Vec3f c = {{0.f,0.f,0.f}};
-        m44fsetel(&ctx->projection, 3, 2, -1.f/(eye.e[2] - c.e[2]));
         Vec3f up = {{0.f,1.f,0.f}};
         lookat(ctx, eye, c, up);
     }
@@ -55,11 +61,12 @@ void render(RenderContext* ctx, int count) {
 
 int main(int argc, char **argv) {
     SDL_Renderer *renderer;
-    sdl_init(SCREEN_WIDTH, SCREEN_HEIGHT, "softrast  OBJ preview", &renderer);
+    sdl_init(SCREEN_WIDTH, SCREEN_HEIGHT, "softrast OBJ preview", &renderer);
 
     // Make custom buffer to interface with program.
     RenderContext ctx;
     ctx.projection = m44fident();
+    ctx.modelview = m44fident();
     ScreenBuffer buffers[2];
     ctx.buffers = buffers;
 
@@ -80,13 +87,12 @@ int main(int argc, char **argv) {
     ctx.num_buffers++;
 
     m44fset(&ctx.viewport, m44fident());
-    m44fsetel(&ctx.viewport, 0, 0, buffers[0].width/4);
-    m44fsetel(&ctx.viewport, 1, 1, buffers[0].height/4);
-    m44fsetel(&ctx.viewport, 2, 2, 1.f);
+    m44fsetel(&ctx.viewport, 0, 0, buffers[0].width/2);
+    m44fsetel(&ctx.viewport, 1, 1, buffers[0].height/2);
+    m44fsetel(&ctx.viewport, 2, 2, 0.f);
     // Translation
     m44fsetel(&ctx.viewport, 0, 3, buffers[0].width/2);
     m44fsetel(&ctx.viewport, 1, 3, buffers[0].height/2);
-    m44fsetel(&ctx.viewport, 2, 3, 1.f);
 
     // Load obj file
     char *filename = argv[1];
@@ -95,7 +101,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    
     // Setup shaders
     phong_shader.base.vertex_shader = &shader_phong_vertex;
     phong_shader.base.fragment_shader = &shader_phong_fragment;

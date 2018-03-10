@@ -37,6 +37,23 @@ typedef struct {
     int num_buffers;
 } RenderContext;
 
+typedef struct {
+    Vec3f pos;
+    Vec3f target;
+    Vec3f up;
+    float aspectratio;
+} Camera;
+
+static Mat44f view_from_camera(Camera cam) {
+    Mat44f translation = {{
+        1.f,    0,      0,      cam.pos.e[0],
+        0,      1.f,    0,      cam.pos.e[1],
+        0,      0,      1.f,    cam.pos.e[2],
+        0,      0,      0,      1.f,
+    }};
+    return translation;
+}
+
 float clamp(float x, float min, float max);
 
 // Sets given pixel in the given buffer to the color
@@ -54,6 +71,8 @@ void line(ScreenBuffer *buffer, int x0, int y0, int x1, int y1, uint32_t color);
 void triangle(RenderContext *ctx, Vec3f v0, Vec3f v1, Vec3f v2,
         Vec3f v0uv, Vec3f v1uv, Vec3f v2uv,
         Vec3f n0, Vec3f n1, Vec3f n2, uint32_t color);
+
+void set_view_from_camera(RenderContext *ctx, Camera cam);
 
 // Struct to represent 3d mesh models.
 typedef struct {
@@ -96,32 +115,44 @@ static inline Mat44f viewport(int x, int y, int w, int h) {
     return m;
 }
 
-static inline void lookat(RenderContext* ctx, Vec3f eye, Vec3f center, Vec3f up) {
-    // Camera always points along z
-    Vec3f z = v3fnormalize(v3fsub(eye,center));
-    Vec3f x = v3fnormalize(v3fcross(up, z));
-    Vec3f y = v3fnormalize(v3fcross(z, x));
+static inline Mat44f perspective(float fovy, float aspect, float znear,
+        float zfar) {
+    const double DEG2RAD = 3.14159265 / 180;
+    float tangent = tan(fovy/2 * DEG2RAD);
+    float f = 1.f/tangent;
+    Mat44f m = {{
+        f/aspect,       0,      0,      0,
+        0,              f,      0,      0,
+        0,              0,      (-zfar-znear)/(zfar - znear),  -2.f*zfar*znear/(zfar - znear),
+        0,              0,      1.f,     0}};
+    return m;
+}
+
+static inline void lookat(RenderContext* ctx, Vec3f eye, Vec3f target, Vec3f up) {
+    // Camera points in -z direction.
+    Vec3f z = v3fnormalize(v3fsub(target,eye));
+    Vec3f x = v3fnormalize(v3fcross(z, up));
+    Vec3f y = v3fnormalize(v3fcross(x, z));
 
     // Make transformation matrix
-    Mat44f minv = m44fident();
-    Mat44f tr = m44fident();
+    Mat44f m = m44fident();
 
-    minv.e[4*0 + 0] = x.e[0];
-    minv.e[4*0 + 1] = x.e[1];
-    minv.e[4*0 + 2] = x.e[2];
+    m.e[4*0 + 0] = x.e[0];
+    m.e[4*0 + 1] = x.e[1];
+    m.e[4*0 + 2] = x.e[2];
     
-    minv.e[4*1 + 0] = y.e[0];
-    minv.e[4*1 + 1] = y.e[1];
-    minv.e[4*1 + 2] = y.e[2];
+    m.e[4*1 + 0] = y.e[0];
+    m.e[4*1 + 1] = y.e[1];
+    m.e[4*1 + 2] = y.e[2];
     
-    minv.e[4*2 + 0] = z.e[0];
-    minv.e[4*2 + 1] = z.e[1];
-    minv.e[4*2 + 2] = z.e[2];
+    m.e[4*2 + 0] = -z.e[0];
+    m.e[4*2 + 1] = -z.e[1];
+    m.e[4*2 + 2] = -z.e[2];
 
-    tr.e[4*0 + 3] = -center.e[0];
-    tr.e[4*1 + 3] = -center.e[1];
-    tr.e[4*2 + 3] = -center.e[2];
-
-    m44fset(&ctx->modelview, m44fm44f(minv,tr));
+    m.e[4*0 + 3] = -x.e[0]*eye.e[0] - x.e[1]*eye.e[1] - x.e[2]*eye.e[2];
+    m.e[4*1 + 3] = -y.e[0]*eye.e[0] - y.e[1]*eye.e[1] - y.e[2]*eye.e[2];
+    m.e[4*2 + 3] = -z.e[0]*eye.e[0] - z.e[1]*eye.e[1] - z.e[2]*eye.e[2];
+    
+    m44fset(&ctx->modelview, m);
     return;
 }
