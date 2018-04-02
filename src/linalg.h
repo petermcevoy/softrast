@@ -89,6 +89,14 @@ typedef struct {
         return val;                                                         \
     }                                                                       \
                                                                             \
+    static inline Vtype fname##emul(Vtype v1, Vtype v2) {                   \
+        Vtype val;                                                          \
+        for (int i=0; i<dim; i++) {                                         \
+            val.e[i] = v1.e[i]*v2.e[i];                                     \
+        }                                                                   \
+        return val;                                                         \
+    }                                                                       \
+                                                                            \
     static inline Vtype fname##div(Vtype v, type s) {                       \
         Vtype val;                                                          \
         for (int i=0; i<dim; i++) {                                         \

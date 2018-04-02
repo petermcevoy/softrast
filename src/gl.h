@@ -26,6 +26,7 @@ typedef struct {
     Mat33f varying_vertex_pos;
     Mat33f varying_vertex_post;
     Mat33f varying_vertex_normal;
+    Mat33f varying_vertex_uv;
 } ShaderBase;
 
 typedef struct {
@@ -55,6 +56,7 @@ static Mat44f view_from_camera(Camera cam) {
 }
 
 float clamp(float x, float min, float max);
+float max(float x, float y);
 
 // Sets given pixel in the given buffer to the color
 void set_color(ScreenBuffer *buffer, int x, int y, uint32_t color);

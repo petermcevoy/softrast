@@ -1,5 +1,6 @@
 #pragma once
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_audio.h>
 
 // Helper for setting up window and SDL.
 
@@ -12,7 +13,7 @@ int sdl_init(int width, int height, char *window_title, SDL_Renderer **renderer)
     int window_height = height;
 
     // SDL init
-	if (SDL_Init(SDL_INIT_VIDEO) != 0){
+	if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO) != 0){
 		printf("\n t %s \n",(const char *)strcat("SDL_Init Error: ",(const char *)SDL_GetError()));
 		return 1;
 	}
@@ -38,9 +39,33 @@ int sdl_init(int width, int height, char *window_title, SDL_Renderer **renderer)
             SDL_TEXTUREACCESS_STREAMING, window_width, window_height);
 
     pixel_mem = malloc(window_width*window_height*4);
-    
+
+
+
     return 0;
 }
+
+void sdl_start_audio(void (*audio_callback)(void*, Uint8*, int)) {
+    // Audio
+    SDL_AudioSpec want, have;
+    SDL_AudioDeviceID audio_dev;
+    SDL_memset(&want, 0, sizeof(want));
+    want.freq = 11025; //48000;
+    want.channels = 1;
+    want.format = AUDIO_F32SYS;
+    want.callback = audio_callback;
+
+    audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have,
+            SDL_AUDIO_ALLOW_FORMAT_CHANGE);
+    if (audio_dev == 0) {
+        SDL_Log("Failed to open audio: %s", SDL_GetError());
+    } else {
+        SDL_PauseAudioDevice(audio_dev, 0); /* start audio playing. */
+    }
+    printf("freq: %d, samples: %d, chans: %d \n", have.freq, have.samples, have.channels);
+}
+
+
 
 void sdl_copy_rgb_to_window_buffer(uint32_t* read_pixel, SDL_Renderer *renderer) {
     int window_width;

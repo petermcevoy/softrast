@@ -4,6 +4,10 @@ inline float clamp(float x, float min, float max)
 {
     return (x < min) ? min : (x > max) ? max : x;
 }
+inline float max(float x, float y)
+{
+    return (x <= y) ? y : x;
+}
 
 static inline void swap(int *a, int *b) {
     int *tmpa = a;
@@ -130,6 +134,9 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
         m33fsetcol(&ctx->shader->varying_vertex_normal, 0, n0);
         m33fsetcol(&ctx->shader->varying_vertex_normal, 1, n1);
         m33fsetcol(&ctx->shader->varying_vertex_normal, 2, n2);
+        m33fsetcol(&ctx->shader->varying_vertex_uv,     0, v0uv);
+        m33fsetcol(&ctx->shader->varying_vertex_uv,     1, v1uv);
+        m33fsetcol(&ctx->shader->varying_vertex_uv,     2, v2uv);
         m33fsetcol(&ctx->shader->varying_vertex_pos,    0, vertex_pos[0]);
         m33fsetcol(&ctx->shader->varying_vertex_pos,    1, vertex_pos[1]);
         m33fsetcol(&ctx->shader->varying_vertex_pos,    2, vertex_pos[2]);

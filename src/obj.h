@@ -5,5 +5,6 @@
 
 // .obj Model loader.
 int load_obj(const char * filename, Mesh *obj);
+int load_obj_mem(FILE *fp, Mesh *obj);
 
 #endif

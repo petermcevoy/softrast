@@ -136,6 +136,11 @@ int load_obj(const char * filename, Mesh *obj) {
         return 1;
     }
     FILE *fp = fopen(filename, "r");
+
+    return load_obj_mem(fp, obj);
+}
+int load_obj_mem(FILE *fp, Mesh *obj) {
+
     char buffer[100];
     char *str = buffer;
     int line_len = 0;
