@@ -13,11 +13,18 @@
 #include "duckdiffuse_bmp.c"
 #include "duckpoly_obj.c"
 
+// For storing the SDL converted duck.wav
 static Uint8* duck_buf;
 static Uint32 duck_buf_len;
 
-static Mesh obj;
+// For storing the SDL converted duck.bmp
+static SDL_Surface *diffuse_tex;
 
+// Mesh for duck model and mesh for post process quad.
+static Mesh obj;
+static Mesh screenobj;
+
+// Duck shaders. One for model rendering and one for post process.
 typedef struct {
     ShaderBase base;
     SDL_Surface* diffuse_tex;
@@ -55,7 +62,6 @@ int shader_duck_fragment(Vec3f bar, Vec3f *color, void *data) {
     
     Vec3f rgb = v3femul(texrgb, ambient);
     rgb = v3fadd(rgb, v3femul(texrgb, diffuse));
-    //rgb = v3fadd(rgb, specular);
     
     v3fset(color, rgb);
 
@@ -63,43 +69,60 @@ int shader_duck_fragment(Vec3f bar, Vec3f *color, void *data) {
 }
 ShaderDuck duck_shader;
 
-static SDL_Surface *diffuse_tex;
+typedef struct {
+    ShaderBase base;
+    ScreenBuffer* rpass;
+    int count;
+    int width;
+    int height;
+} ShaderDuckPost;
+int shader_duckpost_fragment(Vec3f bar, Vec3f *color, void *data) {
+    ShaderDuckPost *sdata = (ShaderDuckPost *)data;
+    Vec3f uv = m33fv3(sdata->base.varying_vertex_uv, bar);
+
+    int rwidth = sdata->rpass->width;
+    int rheight = sdata->rpass->height;
+    int x = sdata->base.frag_coord.e[0];
+    int y = sdata->base.frag_coord.e[1];
+    int rx = rwidth - ((x + sdata->count) % rwidth);
+    int ry = rheight - (( y + sdata->count) % rheight);
+
+    uint32_t *pixel = (uint32_t *)sdata->rpass->memory;
+    uint32_t col = pixel[ rwidth*ry + rx ];
+    float r = (col >> 16 & 0xff)/255.f; 
+    float g = (col >> 8 & 0xff)/255.f;
+    float b = (col & 0xff)/255.f;
+    
+    Vec3f rgb = {{r, g, b}};
+    v3fset(color, rgb);
+
+    return 0;
+}
+ShaderDuckPost duckpost_shader;
+
 
 // Render function, called from loop in main.
 void render(RenderContext* ctx, int count) {
     // Clear main buffer to black.
-    uint32_t bgcol = 0x444444;
-    memset(ctx->buffers[0].memory, bgcol, ctx->buffers[0].height*ctx->buffers[0].width*(sizeof(uint32_t)));
+    memset(ctx->buffers[0].memory, 0, ctx->buffers[0].height*ctx->buffers[0].width*(sizeof(uint32_t)));
     memset(ctx->buffers[1].memory, 0, ctx->buffers[1].height*ctx->buffers[1].width*(sizeof(int)));
+    memset(ctx->buffers[2].memory, 0, ctx->buffers[2].height*ctx->buffers[2].width*(sizeof(uint32_t)));
+    memset(ctx->buffers[3].memory, 0, ctx->buffers[3].height*ctx->buffers[3].width*(sizeof(int)));
 
+    // Render duck
     uint32_t *pixels = (uint32_t *)ctx->buffers[0].memory;
     float t = 0.008f*count;
-
-    {
-        uint32_t stripecol = 0xA64C08;
-        for (int x = 0; x < ctx->buffers[0].width; x++) {
-            for (int y = 0; y < ctx->buffers[0].height; y++) {
-                int val = (int)((float)x + (float)y + t*250) % 200;
-                if (50 <= val && val <= 100) {
-                    set_color(&ctx->buffers[0], x, y, stripecol);
-                }
-            }
-        }
-    }
-    
 
     // Set Projection and view
     {
         float varx = sinf(t*1.f);
         float varz = cosf(t*1.f);
         static float r = 5.f;
-        Mat44f proj = perspective(50.f, 4.f/3.f, -4.f, -6.5f);
-        m44fset(&ctx->projection, proj);
-
         Vec3f eye = {{r*varx, -1.f, r*varz}};
         Vec3f c = {{0.f,0.3f,0.f}};
         Vec3f up = {{0.f,1.f,0.f}};
-        lookat(ctx, eye, c, up);
+        lookat(&duck_shader.base.modelview, eye, c, up);
+        duck_shader.base.mvp = m44fm44f(duck_shader.base.projection, duck_shader.base.modelview);
     }
     
     // Set shader vars.
@@ -113,18 +136,21 @@ void render(RenderContext* ctx, int count) {
         duck_shader.diffuse_amount = .8f;
         duck_shader.specular_amount = .2f;
         duck_shader.specular_falloff = 25.f;
-
-        duck_shader.diffuse_tex = diffuse_tex;
-        duck_shader.base.modelview = ctx->modelview;
-        duck_shader.base.projection = ctx->projection;
-        duck_shader.base.mvp = m44fm44f(ctx->projection, ctx->modelview);
-        duck_shader.base.viewport = ctx->viewport;
     }
     
     // Assign shader pair to render context.
     ctx->shader = (ShaderBase *)&duck_shader;
-    draw_model(ctx, obj);
+    draw_model(obj, ctx, &ctx->buffers[0], &ctx->buffers[1]);
+    
+    // Post process
+    duckpost_shader.count = count;
+    ctx->shader = (ShaderBase *)&duckpost_shader;
+    draw_model(screenobj, ctx, &ctx->buffers[2], &ctx->buffers[3]);
 }
+
+
+// Audio/song stuff...
+//
 
 typedef struct {
     int tick;
@@ -189,7 +215,6 @@ SongEntry song[] = {
     {104 +   16,    key_a},
     {104 +   24,    key_e},
 };
-
 
 static int songsampleticks = 0;
 static int songticks = 0;
@@ -278,40 +303,97 @@ void audio_callback(void *userdata, Uint8 *stream, int len) {
     }
 }
 
+
+// Setup sdl, shaders, load meshes and textures, setup audio and run main loop.
 int main(int argc, char **argv) {
     SDL_Renderer *renderer;
     sdl_init(SCREEN_WIDTH, SCREEN_HEIGHT, "duck", &renderer);
 
-    // Make custom buffer to interface with program.
     RenderContext ctx;
-    ctx.projection = m44fident();
-    ctx.modelview = m44fident();
-    ScreenBuffer buffers[2];
+    ScreenBuffer buffers[4];
     ctx.buffers = buffers;
 
+    // RGBA for rendering duck model.
     buffers[0].type = BUF_RGBA;
     buffers[0].depth = sizeof(uint32_t);
-    buffers[0].width = SCREEN_WIDTH;
-    buffers[0].height = SCREEN_HEIGHT;
-    buffers[0].pitch = SCREEN_WIDTH*buffers[0].depth;
-    buffers[0].memory = malloc(SCREEN_WIDTH*SCREEN_HEIGHT*buffers[0].depth);
+    buffers[0].width = 200;
+    buffers[0].height = 200;
+    buffers[0].pitch = 200*buffers[0].depth;
+    buffers[0].memory = malloc(200*200*buffers[0].depth);
     ctx.num_buffers++;
 
+    // Z for rendering duck model.
     buffers[1].type = BUF_Z;
     buffers[1].depth = sizeof(int);
-    buffers[1].width = SCREEN_WIDTH;
-    buffers[1].height = SCREEN_HEIGHT;
-    buffers[1].pitch = SCREEN_WIDTH*buffers[1].depth;
-    buffers[1].memory = malloc(SCREEN_WIDTH*SCREEN_HEIGHT*buffers[1].depth);
+    buffers[1].width = 200;
+    buffers[1].height = 200;
+    buffers[1].pitch = 200*buffers[1].depth;
+    buffers[1].memory = malloc(200*200*buffers[1].depth);
+    ctx.num_buffers++;
+    
+    // RGBA for rendering post process quad.
+    buffers[2].type = BUF_RGBA;
+    buffers[2].depth = sizeof(uint32_t);
+    buffers[2].width = SCREEN_WIDTH;
+    buffers[2].height = SCREEN_HEIGHT;
+    buffers[2].pitch = SCREEN_WIDTH*buffers[2].depth;
+    buffers[2].memory = malloc(SCREEN_WIDTH*SCREEN_HEIGHT*buffers[2].depth);
+    ctx.num_buffers++;
+    
+    // Z for rendering post process quad.
+    buffers[3].type = BUF_Z;
+    buffers[3].depth = sizeof(int);
+    buffers[3].width = SCREEN_WIDTH;
+    buffers[3].height = SCREEN_HEIGHT;
+    buffers[3].pitch = SCREEN_WIDTH*buffers[3].depth;
+    buffers[3].memory = malloc(SCREEN_WIDTH*SCREEN_HEIGHT*buffers[3].depth);
     ctx.num_buffers++;
 
-    m44fset(&ctx.viewport, m44fident());
-    m44fsetel(&ctx.viewport, 0, 0, buffers[0].width/2);
-    m44fsetel(&ctx.viewport, 1, 1, buffers[0].height/2);
-    m44fsetel(&ctx.viewport, 2, 2, 0.f);
-    // Translation
-    m44fsetel(&ctx.viewport, 0, 3, buffers[0].width/2);
-    m44fsetel(&ctx.viewport, 1, 3, buffers[0].height/2);
+
+    // Make screen geometry
+    float verts[] = {
+        -1.0f, -1.0f, 0.f,
+        -1.f, 1.0f, 0.f,
+        1.0f, -1.0f, 0.f,
+        
+        1.0f, -1.0f, 0.f,
+        -1.0f, 1.0f, 0.f,
+        1.0f, 1.0f, 0.f,
+    };
+    screenobj.verts = verts;
+
+    float uvs[] = {
+        0.f, 1.f, 0.f,
+        0.f, 0.f, 0.f,
+        1.f, 1.f, 0.f,
+        
+        1.f, 1.f, 0.f,
+        0.f, 0.f, 0.f,
+        1.f, 0.f, 0.f,
+    };
+    screenobj.uvs = uvs;
+    
+    float normals[] = {
+        0.f, 0.f, 0.f,
+        0.f, 0.f, 0.f,
+        0.f, 0.f, 0.f,
+        0.f, 0.f, 0.f,
+        0.f, 0.f, 0.f,
+        0.f, 0.f, 0.f
+    };
+    screenobj.normals = normals;
+    
+    int faces_verts[] = {
+        0, 1, 2,
+        3, 4, 5,
+    };
+    screenobj.faces_verts = faces_verts;
+    screenobj.faces_uvs = faces_verts;
+    screenobj.faces_normals = faces_verts;
+    screenobj.nverts = 6;
+    screenobj.nuvs = 6;
+    screenobj.nnormals = 6;
+    screenobj.nfaces_verts = 6;
 
     // Load obj file
     FILE *fp = fmemopen(res_duckpoly_obj, res_duckpoly_obj_len, "r");
@@ -328,6 +410,36 @@ int main(int argc, char **argv) {
     // Setup shaders
     duck_shader.base.vertex_shader = &shader_phong_vertex;
     duck_shader.base.fragment_shader = &shader_duck_fragment;
+    duck_shader.diffuse_tex = diffuse_tex;
+
+    Mat44f proj = perspective(50.f, 1.f, -4.f, -6.5f);
+    m44fset(&duck_shader.base.projection, proj);
+
+    m44fset(&duck_shader.base.viewport, m44fident());
+    m44fsetel(&duck_shader.base.viewport, 0, 0, buffers[0].width/2);
+    m44fsetel(&duck_shader.base.viewport, 1, 1, buffers[0].height/2);
+    m44fsetel(&duck_shader.base.viewport, 2, 2, 0.f);
+    m44fsetel(&duck_shader.base.viewport, 0, 3, buffers[0].width/2);
+    m44fsetel(&duck_shader.base.viewport, 1, 3, buffers[0].height/2);
+
+    duckpost_shader.base.vertex_shader = &shader_uv_vertex;
+    duckpost_shader.base.fragment_shader = &shader_duckpost_fragment;
+    duckpost_shader.rpass = &buffers[0];
+    duckpost_shader.width = buffers[2].width;
+    duckpost_shader.height = buffers[2].height;
+    m44fset(&duckpost_shader.base.mvp, m44fident());
+    m44fset(&duckpost_shader.base.modelview, m44fident());
+    m44fset(&duckpost_shader.base.projection, m44fident());
+
+    m44fset(&duckpost_shader.base.viewport, m44fident());
+    m44fsetel(&duckpost_shader.base.viewport, 0, 0, buffers[2].width/2);
+    m44fsetel(&duckpost_shader.base.viewport, 1, 1, buffers[2].height/2);
+    m44fsetel(&duckpost_shader.base.viewport, 2, 2, 0.f);
+    m44fsetel(&duckpost_shader.base.viewport, 0, 3, buffers[2].width/2);
+    m44fsetel(&duckpost_shader.base.viewport, 1, 3, buffers[2].height/2);
+
+    duckpost_shader.base.mvp = m44fm44f(duckpost_shader.base.projection, duckpost_shader.base.modelview);
+    
 
     // Start Audio
     sdl_start_audio(audio_callback);
@@ -344,14 +456,13 @@ int main(int argc, char **argv) {
     printf("WAV freq: %d, samples: %d, chans: %d, format: %d \n", spec.freq, spec.samples, spec.channels, spec.format);
     duck_buf = (Uint8*)audio_buf;
     
-
     // Main display
     int running = 1;
     int count = 0;
     while(running) {
         //Render video
         render(&ctx, count++);
-        uint32_t *pixel = (uint32_t *)ctx.buffers[0].memory;
+        uint32_t *pixel = (uint32_t *)ctx.buffers[2].memory;
         
         sdl_copy_rgb_to_window_buffer(pixel, renderer);
 

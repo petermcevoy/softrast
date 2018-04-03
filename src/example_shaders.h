@@ -11,7 +11,34 @@ static inline Vec3f reflect(Vec3f incident, Vec3f normal) {
 //
 
 //
-// UV vector shader
+// UV shader
+//
+
+typedef struct {
+    ShaderBase base;
+} ShaderUV;
+
+Vec4f shader_uv_vertex(Vec3f point, int nthvert, void *data) {
+    ShaderUV *sdata = (ShaderUV *)data;
+    Vec4f vertex = {{point.e[0], point.e[1], point.e[2], 1.f}};
+    vertex = m44fv4(sdata->base.mvp, vertex);
+    return vertex;
+}
+
+int shader_uv_fragment(Vec3f bar, Vec3f *color, void *data) {
+    ShaderUV *sdata = (ShaderUV *)data;
+    Vec3f v0col = {{1.f,0,0}};
+    Vec3f v1col = {{0,1.f,0}};
+    Vec3f v2col = {{0,0,1.f}};
+
+    Vec3f rgb = m33fv3(sdata->base.varying_vertex_uv, bar);
+
+    v3fset(color, rgb);
+    return 0;
+}
+
+//
+// Normal vector shader
 //
 
 typedef struct {

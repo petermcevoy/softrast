@@ -92,14 +92,11 @@ static inline int barycentric(Vec2i A, Vec2i B, Vec2i C) {
 }
 
 // Main rasterize function
-void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
+void triangle(Vec3f v0, Vec3f v1, Vec3f v2,
         Vec3f v0uv, Vec3f v1uv, Vec3f v2uv, 
-        Vec3f n0, Vec3f n1, Vec3f n2, uint32_t color) {
+        Vec3f n0, Vec3f n1, Vec3f n2, uint32_t color,
+        RenderContext* ctx, ScreenBuffer* buffer_rgba, ScreenBuffer* buffer_z) {
 
-    // For the moment, assume we want to draw into these buffers...
-    ScreenBuffer *buffer_rgba = &ctx->buffers[0];
-    ScreenBuffer *buffer_z = &ctx->buffers[1];
-    
     Vec2i sc[3]; // screen coords
     Vec3f vertex_pos[3] = {v0, v1, v2}; // vertex pos. world coords
     
@@ -121,7 +118,7 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
         // Vertex post-processing:
         {
             // Viewport transform
-            Vec4f sctmp = m44fv4(ctx->viewport, vertex_pos_clip[j]);
+            Vec4f sctmp = m44fv4(ctx->shader->viewport, vertex_pos_clip[j]);
             
             // Sub-pixel preciision.
             sc[j].e[0] = sctmp.e[0]*sub_factor;
@@ -199,6 +196,12 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
                 // Try to draw pixel to z buffer. 
                 // If if no higher value already present, draw into rgba.
                 if(set_z(buffer_z, buf_x, buf_y, zval)) {
+
+                    // Set frag coords
+                    ctx->shader->frag_coord.e[0] = buf_x;
+                    ctx->shader->frag_coord.e[1] = buf_y;
+
+                    // Get color
                     Vec3f col;
                     ctx->shader->fragment_shader(bar, &col, ctx->shader);
                     col.e[0] = clamp(col.e[0], 0.f, 1.f);
@@ -214,7 +217,8 @@ void triangle(RenderContext* ctx, Vec3f v0, Vec3f v1, Vec3f v2,
     } // End bounding-box loop.
 }
 
-void draw_model(RenderContext* ctx, Mesh obj) {
+void draw_model(Mesh obj, RenderContext* ctx, ScreenBuffer* buffer_rgb, 
+        ScreenBuffer* buffer_z) {
     int *faces = obj.faces_verts;
     int *faces_uvs = obj.faces_uvs;
     int *faces_normals = obj.faces_normals;
@@ -270,8 +274,9 @@ void draw_model(RenderContext* ctx, Mesh obj) {
             normal_coords[j] = n;
         }
 
-        triangle(ctx, world_coords[0], world_coords[1], world_coords[2],
+        triangle(world_coords[0], world_coords[1], world_coords[2],
                 uv_coords[0], uv_coords[1], uv_coords[2],
-                normal_coords[0], normal_coords[1], normal_coords[2], 0);
+                normal_coords[0], normal_coords[1], normal_coords[2], 0,
+                ctx, buffer_rgb, buffer_z);
     }
 }

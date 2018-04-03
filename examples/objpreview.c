@@ -26,12 +26,15 @@ void render(RenderContext* ctx, int count) {
         float varz = cosf(t*1.f);
         static float r = 2.f;
         Mat44f proj = perspective(80.f, 4.f/3.f, -2.f, -4.5f);
-        m44fset(&ctx->projection, proj);
+        m44fset(&phong_shader.base.projection, proj);
 
         Vec3f eye = {{r*varx, vary, r*varz}};
         Vec3f c = {{0.f,0.f,0.f}};
         Vec3f up = {{0.f,1.f,0.f}};
-        lookat(ctx, eye, c, up);
+        lookat(&phong_shader.base.modelview, eye, c, up);
+        
+        phong_shader.base.mvp = m44fm44f(phong_shader.base.projection,
+                phong_shader.base.modelview);
     }
     
     // Set shader vars.
@@ -47,15 +50,11 @@ void render(RenderContext* ctx, int count) {
         phong_shader.specular_falloff = 25.f;
         phong_shader.count = count;
 
-        phong_shader.base.modelview = ctx->modelview;
-        phong_shader.base.projection = ctx->projection;
-        phong_shader.base.mvp = m44fm44f(ctx->projection, ctx->modelview);
-        phong_shader.base.viewport = ctx->viewport;
     }
     
     // Assign shader pair to render context.
     ctx->shader = (ShaderBase *)&phong_shader;
-    draw_model(ctx, obj);
+    draw_model(obj, ctx, &ctx->buffers[0], &ctx->buffers[1]);
 }
 
 
@@ -65,8 +64,6 @@ int main(int argc, char **argv) {
 
     // Make custom buffer to interface with program.
     RenderContext ctx;
-    ctx.projection = m44fident();
-    ctx.modelview = m44fident();
     ScreenBuffer buffers[2];
     ctx.buffers = buffers;
 
@@ -86,14 +83,6 @@ int main(int argc, char **argv) {
     buffers[1].memory = malloc(SCREEN_WIDTH*SCREEN_HEIGHT*buffers[1].depth);
     ctx.num_buffers++;
 
-    m44fset(&ctx.viewport, m44fident());
-    m44fsetel(&ctx.viewport, 0, 0, buffers[0].width/2);
-    m44fsetel(&ctx.viewport, 1, 1, buffers[0].height/2);
-    m44fsetel(&ctx.viewport, 2, 2, 0.f);
-    // Translation
-    m44fsetel(&ctx.viewport, 0, 3, buffers[0].width/2);
-    m44fsetel(&ctx.viewport, 1, 3, buffers[0].height/2);
-
     // Load obj file
     char *filename = argv[1];
     if (load_obj(filename, &obj) != 0) {
@@ -104,6 +93,13 @@ int main(int argc, char **argv) {
     // Setup shaders
     phong_shader.base.vertex_shader = &shader_phong_vertex;
     phong_shader.base.fragment_shader = &shader_phong_fragment;
+    
+    m44fset(&phong_shader.base.viewport, m44fident());
+    m44fsetel(&phong_shader.base.viewport, 0, 0, buffers[0].width/2);
+    m44fsetel(&phong_shader.base.viewport, 1, 1, buffers[0].height/2);
+    m44fsetel(&phong_shader.base.viewport, 2, 2, 0.f);
+    m44fsetel(&phong_shader.base.viewport, 0, 3, buffers[0].width/2);
+    m44fsetel(&phong_shader.base.viewport, 1, 3, buffers[0].height/2);
 
     // Main display
     int running = 1;
@@ -118,9 +114,9 @@ int main(int argc, char **argv) {
         running = (sdl_is_escape_pressed() == 0);
     }
     
-    //for (int i=0; i < ctx.num_buffers; i++) {
-    //    free(ctx.buffers[i].memory);
-    //}   
+    for (int i=0; i < ctx.num_buffers; i++) {
+        free(ctx.buffers[i].memory);
+    }   
 
     return 0;
 }

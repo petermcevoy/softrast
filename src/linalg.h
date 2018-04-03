@@ -123,8 +123,8 @@ typedef struct {
                                                                             \
     static inline Vtype fname##normalize(Vtype v) {                         \
         /* Use fast inverese square root q_rsqrt. */                        \
-        return fname##mul(v, q_rsqrt(fname##dot(v,v)));                     \
-        /*return fname##mul(v, i_rsqrt(fname##dot(v,v))); */                \
+        /* return fname##mul(v, q_rsqrt(fname##dot(v,v)));    */                 \
+        return fname##mul(v, i_rsqrt(fname##dot(v,v)));                 \
     }                                                                       \
 
 

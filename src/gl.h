@@ -27,12 +27,10 @@ typedef struct {
     Mat33f varying_vertex_post;
     Mat33f varying_vertex_normal;
     Mat33f varying_vertex_uv;
+    Vec2i  frag_coord;
 } ShaderBase;
 
 typedef struct {
-    Mat44f projection;
-    Mat44f modelview;
-    Mat44f viewport;
     ShaderBase *shader;
     ScreenBuffer *buffers;
     int num_buffers;
@@ -44,16 +42,6 @@ typedef struct {
     Vec3f up;
     float aspectratio;
 } Camera;
-
-static Mat44f view_from_camera(Camera cam) {
-    Mat44f translation = {{
-        1.f,    0,      0,      cam.pos.e[0],
-        0,      1.f,    0,      cam.pos.e[1],
-        0,      0,      1.f,    cam.pos.e[2],
-        0,      0,      0,      1.f,
-    }};
-    return translation;
-}
 
 float clamp(float x, float min, float max);
 float max(float x, float y);
@@ -70,11 +58,10 @@ void line(ScreenBuffer *buffer, int x0, int y0, int x1, int y1, uint32_t color);
 
 // Draws and fills triangle with verticies v0, v1, v2 and corresponding
 // uv coordinates.
-void triangle(RenderContext *ctx, Vec3f v0, Vec3f v1, Vec3f v2,
+void triangle(Vec3f v0, Vec3f v1, Vec3f v2,
         Vec3f v0uv, Vec3f v1uv, Vec3f v2uv,
-        Vec3f n0, Vec3f n1, Vec3f n2, uint32_t color);
-
-void set_view_from_camera(RenderContext *ctx, Camera cam);
+        Vec3f n0, Vec3f n1, Vec3f n2, uint32_t color,
+        RenderContext* ctx, ScreenBuffer* buffer_rgba, ScreenBuffer* buffer_z);
 
 // Struct to represent 3d mesh models.
 typedef struct {
@@ -101,7 +88,8 @@ inline void free_model_data(Mesh obj) {
 }
 
 // Function to draw triangles with uv for a model file.
-void draw_model(RenderContext* ctx, Mesh obj);
+void draw_model(Mesh obj, RenderContext* ctx, ScreenBuffer* buffer_rgba, 
+        ScreenBuffer* buffer_z);
 
 // Viewport projection. Maps [-1, 1]x[-1,1] to [0, w]x[0,h].
 static inline Mat44f viewport(int x, int y, int w, int h) {
@@ -130,7 +118,7 @@ static inline Mat44f perspective(float fovy, float aspect, float znear,
     return m;
 }
 
-static inline void lookat(RenderContext* ctx, Vec3f eye, Vec3f target, Vec3f up) {
+static inline void lookat(Mat44f* modelview, Vec3f eye, Vec3f target, Vec3f up) {
     // Camera points in -z direction.
     Vec3f z = v3fnormalize(v3fsub(target,eye));
     Vec3f x = v3fnormalize(v3fcross(z, up));
@@ -155,6 +143,6 @@ static inline void lookat(RenderContext* ctx, Vec3f eye, Vec3f target, Vec3f up)
     m.e[4*1 + 3] = -y.e[0]*eye.e[0] - y.e[1]*eye.e[1] - y.e[2]*eye.e[2];
     m.e[4*2 + 3] = -z.e[0]*eye.e[0] - z.e[1]*eye.e[1] - z.e[2]*eye.e[2];
     
-    m44fset(&ctx->modelview, m);
+    m44fset(modelview, m);
     return;
 }
